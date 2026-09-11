@@ -32,6 +32,7 @@ function saveSession(){
       thumb: hand.state.thumb,
       rightHand,
       loop,
+      showMap,
       sets: Object.fromEntries(SET_KEYS.map(k=>[k,[...SETS[k]]])),
       tempoValue: +$('tempo').value,
     }));
@@ -48,12 +49,13 @@ function loadSession(){
     const thumb=!!d.thumb;
     const rightHand=!!d.rightHand;
     const loop=!!d.loop;
+    const showMap=!!d.showMap;
     // nothing stored -> defaults; stored-but-empty is a real choice, so keep it
     const sets = (d.sets && typeof d.sets==='object')
       ? sanitizeSets(d.sets, digitOrder(thumb))
       : defaultSets();
     const tempoValue = Number.isFinite(d.tempoValue) ? d.tempoValue : null;
-    return {thumb, rightHand, loop, sets, tempoValue};
+    return {thumb, rightHand, loop, showMap, sets, tempoValue};
   }catch{ return null; }
 }
 
@@ -67,6 +69,7 @@ const hand = createHand($('hand'), { onStateChange: s => { $('thumbSw').checked 
 
 let rightHand = restored?.rightHand ?? false;
 let loop = restored?.loop ?? false;
+let showMap = restored?.showMap ?? false;
 let COMPILED=[], p=-1, playing=false, timer=null, tempo=0;
 
 /* ============================================================
@@ -80,6 +83,7 @@ const stateAt = i =>
 
 function recompile(){
   COMPILED = compile(SETS, digitOrder(hand.state.thumb));
+  hand.setMap(SETS);
   renderSeq();
   if(p>COMPILED.length-1) p=COMPILED.length-1;
   show();
@@ -143,7 +147,7 @@ function buildSetChips(){
   const order=digitOrder(hand.state.thumb), slots=slotsOf(order);
   for(const key of SET_KEYS){
     const universe = key[0]==='B' ? order : slots;
-    const cls = key[0]==='B' ? 'bend' : 'split';
+    const cls = key.toLowerCase();       // b1/b2/s1/s2 — matches the set-map colors
     const box=$(key); box.innerHTML='';
     universe.forEach(id=>{
       const c=document.createElement('div');
@@ -169,6 +173,7 @@ $('handSw').onchange=()=>{
   saveSession();
 };
 $('loopSw').onchange=()=>{ loop = $('loopSw').checked; saveSession(); };
+$('mapSw').onchange=()=>{ showMap = $('mapSw').checked; hand.showMap(showMap); saveSession(); };
 $('btnPlay').onclick =()=>setPlaying(!playing);
 $('btnNext').onclick =()=>{ setPlaying(false); stepBy(1); };
 $('btnPrev').onclick =()=>{ setPlaying(false); stepBy(-1); };
@@ -191,6 +196,8 @@ $('thumbSw').checked = hand.state.thumb;
 $('handSw').checked = rightHand;
 $('hand').classList.toggle('right', rightHand);
 $('loopSw').checked = loop;
+$('mapSw').checked = showMap;
+hand.showMap(showMap);
 buildSetChips();
 recompile();
 go(-1);

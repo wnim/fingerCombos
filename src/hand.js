@@ -46,15 +46,20 @@ function rrect(x,y,w,h,rt,rb){           // vertical rounded rect (rt=top radius
 export function createHand(svg, {onStateChange}={}){
   let DIGITS={};      // id -> {node, ext, bent, geom, anim:{theta,bend}, target:{...}}
   let GAPS={};        // slotId -> node
+  let DIGITMAP={};    // id -> {b1, b2}      set-map halves (bend sets)
+  let SLOTMAP={};     // slotId -> {s1, s2}  set-map halves (split sets)
   let order=[], lay={};
   let raf=null;
   const state={ enableThumb:false, bends:new Set(), splits:new Set() };
+  // set map is independent of the playback state above — it's the static
+  // B1/B2/S1/S2 membership, not which sets are currently active mid-routine.
+  const mapSets={ B1:new Set(), B2:new Set(), S1:new Set(), S2:new Set() };
 
   function build(enableThumb){
     svg.innerHTML='';
     order=digitOrder(enableThumb);
     lay=layout(order);
-    DIGITS={}; GAPS={};
+    DIGITS={}; GAPS={}; DIGITMAP={}; SLOTMAP={};
 
     // palm
     svg.appendChild(el('path',{class:'palm', d:
@@ -64,6 +69,9 @@ export function createHand(svg, {onStateChange}={}){
     // gap markers — an annotation layer, appended LAST so the digits
     // can't occlude the chevrons or the slot label.
     const gapLayer=el('g',{class:'gaplayer'});
+    // set map — a second, independent annotation layer: static S1/S2
+    // membership, well above the live chevron so the two never collide.
+    const mapLayer=el('g',{class:'maplayer'});
     slotsOf(order).forEach(slot=>{
       const [a,b]=[slot[0], slot.slice(1)];
       const pa=lay[a].base, pb=lay[b].base;
@@ -74,6 +82,24 @@ export function createHand(svg, {onStateChange}={}){
       const t=el('text',{class:'gaplabel', x:mx, y:my-22}); t.textContent=slot;
       g.appendChild(t);
       gapLayer.appendChild(g); GAPS[slot]=g;
+
+      const sm=el('g',{class:'slotmapmark','data-slot':slot});
+      const s1=el('rect',{class:'half s1', x:mx-11, y:my-41, width:9, height:8, rx:2});
+      const s2=el('rect',{class:'half s2', x:mx+2,  y:my-41, width:9, height:8, rx:2});
+      sm.appendChild(s1); sm.appendChild(s2);
+      mapLayer.appendChild(sm); SLOTMAP[slot]={s1,s2};
+    });
+
+    // set map — finger side: two half-marks per digit (B1 left / B2 right),
+    // fixed above the extended tip so they never sit inside the bent-fold
+    // drawing, whichever crossfade is showing.
+    order.forEach(id=>{
+      const cfg=DIGIT_TABLE[id], b=lay[id].base, w=lay[id].w, tipY=b.y-cfg.len;
+      const g=el('g',{class:'mapmark','data-id':id});
+      const b1=el('rect',{class:'half b1', x:b.x-w*0.28-9, y:tipY-16, width:9, height:8, rx:2});
+      const b2=el('rect',{class:'half b2', x:b.x+w*0.28,   y:tipY-16, width:9, height:8, rx:2});
+      g.appendChild(b1); g.appendChild(b2);
+      mapLayer.appendChild(g); DIGITMAP[id]={b1,b2};
     });
 
     // digits
@@ -117,6 +143,24 @@ export function createHand(svg, {onStateChange}={}){
     });
 
     svg.appendChild(gapLayer);
+    svg.appendChild(mapLayer);
+    applySetMap();
+  }
+
+  /* Paint the static set-map overlay from the last sets given to setMap().
+     Re-run at the end of every build() so a thumb-triggered rebuild (which
+     tears down and recreates every mark) doesn't silently blank the map. */
+  function applySetMap(){
+    order.forEach(id=>{
+      const m=DIGITMAP[id]; if(!m) return;
+      m.b1.classList.toggle('on', mapSets.B1.has(id));
+      m.b2.classList.toggle('on', mapSets.B2.has(id));
+    });
+    slotsOf(order).forEach(slot=>{
+      const m=SLOTMAP[slot]; if(!m) return;
+      m.s1.classList.toggle('on', mapSets.S1.has(slot));
+      m.s2.classList.toggle('on', mapSets.S2.has(slot));
+    });
   }
 
   function apply(){
@@ -173,6 +217,17 @@ export function createHand(svg, {onStateChange}={}){
     split(id,on=true){ on?state.splits.add(String(id)):state.splits.delete(String(id)); apply(); },
     enableThumb(on){ state.enableThumb=on; build(on); apply(); },
     reset(){ state.bends.clear(); state.splits.clear(); apply(); },
+    /* setMap({B1,B2,S1,S2}) — repaint the static set-map overlay. Call
+       whenever the sets change; membership may span digits/slots that
+       don't exist for the current order, so filter through sanitizeSets
+       upstream the same way setState's sources already do. */
+    setMap(sets={}){
+      for(const k of ['B1','B2','S1','S2']){
+        mapSets[k] = new Set([...(sets[k]||[])].map(String));
+      }
+      applySetMap();
+    },
+    showMap(on){ svg.classList.toggle('showmap', !!on); },
     get state(){ return {thumb:state.enableThumb, bends:[...state.bends], splits:[...state.splits]}; },
     get order(){ return [...order]; },
     get slots(){ return slotsOf(order); },

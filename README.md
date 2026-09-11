@@ -38,6 +38,11 @@ dependencies and nothing to install.
   so unbending one set can't straighten a finger another set still holds.
 - **Player** — steps/plays the compiled routine through the hand, with a tempo
   control. Click any row to jump.
+- **Set map** — an optional overlay on the hand itself, color-coded per set
+  (B1/B2/S1/S2, matching the chip colors), so someone who already knows the
+  sequence can read the whole drill off the diagram without stepping through
+  playback. A finger or slot in two sets lights up both halves of its marker.
+  Toggleable; the toggle is remembered like everything else.
 - **Validator** — rejects an illegal routine (bending a bent set, etc.) loudly.
 
 ## Files

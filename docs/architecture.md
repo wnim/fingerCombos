@@ -97,11 +97,22 @@ More than one hand can exist on a page; nothing is global.
   Bending crossfades extended↔bent; it is *not* a puppet fold.
 - **Gap markers** are an annotation layer appended **last**, so the digits can't
   occlude the chevrons or the slot label.
+- **Set map** is a second, independent annotation layer: a static, toggleable
+  overlay of B1/B2/S1/S2 *membership* (not the live playback state). Each
+  finger gets two half-marks (B1 left / B2 right, fixed above the extended
+  tip) and each slot gets two half-marks (S1 left / S2 right, fixed above the
+  gap chevron), colored per set and outline-only when not a member. Two
+  halves per digit/slot is what lets overlap show without one hiding the
+  other. Driven by `setMap(sets)` (repaint membership) and `showMap(on)`
+  (toggle visibility via a `.showmap` class on the root `<svg>`) — both
+  independent of `setState`/`apply`, and repainted from the last-given sets
+  at the end of every `build()` so a thumb-triggered rebuild doesn't blank it.
 - **Animation loop** — per-digit `theta` (rotation, from splits) and `bend`
   (0→1 crossfade) lerp toward targets each frame. Rotation is the puppet motion;
   bend is a picture swap.
 - **API**: `setState({thumb, bends, splits})`, `bend(id, on)`, `split(id, on)`,
-  `enableThumb(on)`, `reset()`, and getters `state` / `order` / `slots`.
+  `enableThumb(on)`, `reset()`, `setMap(sets)`, `showMap(on)`, and getters
+  `state` / `order` / `slots`.
 
 ## app.js — controls, player, persistence
 
@@ -111,9 +122,10 @@ More than one hand can exist on a page; nothing is global.
   Transport (reset/prev/play-pause/next) + tempo slider; click a row to jump.
   The tempo slider reads as *speed*, so the delay is `SPAN - value`, derived
   from the DOM at boot so the two can't drift apart.
-- **Persistence** — sets, thumb and tempo go to `localStorage` under
-  `fingerCombos.v1`. Every access is guarded: storage can be missing or throw,
-  and a failure just means "start from defaults". Restored data goes through
-  `sanitizeSets`, so a stale or hand-edited blob can't produce an invalid state.
+- **Persistence** — sets, thumb, hand, loop, set-map visibility, and tempo go
+  to `localStorage` under `fingerCombos.v1`. Every access is guarded: storage
+  can be missing or throw, and a failure just means "start from defaults".
+  Restored data goes through `sanitizeSets`, so a stale or hand-edited blob
+  can't produce an invalid state.
 - **Console access** — `window.hand` and `window.routine` are still exported for
   poking at from devtools.

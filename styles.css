@@ -5,6 +5,10 @@
   --palm:#f3f4f6;
   --bend:#d97706;         /* state: bent  (amber) */
   --split:#0d9488;        /* state: split (teal)  */
+  --set-b1:#d97706;       /* set B1 (amber) */
+  --set-b2:#dc2626;       /* set B2 (red)   */
+  --set-s1:#0d9488;       /* set S1 (teal)  */
+  --set-s2:#2563eb;       /* set S2 (blue)  */
   --bg:#fbfbfa;
   --panel:#ffffff;
   --line:#e7e7e4;
@@ -36,6 +40,19 @@ svg.right{transform:scaleX(-1)}    /* mirror the whole hand for a right-hand vie
 .gapmark.on .gaplabel{opacity:1}
 svg.right .gaplabel{transform:scaleX(-1)}   /* un-mirror the digits so slot labels stay readable */
 
+/* set map — a static, toggleable overlay of set MEMBERSHIP (not the live
+   playback state). Independent layer, hidden unless .showmap is set on the
+   svg root. Each finger/slot gets two half-marks (one per set in its
+   category) so a digit or slot that's in both sets lights up both halves
+   instead of one hiding the other. */
+.maplayer{opacity:0;transition:opacity .18s}
+svg.showmap .maplayer{opacity:1}
+.mapmark .half, .slotmapmark .half{fill:none;stroke:var(--ink-soft);stroke-width:1.3;transition:fill .15s,stroke .15s}
+.mapmark .half.on.b1{fill:var(--set-b1);stroke:var(--set-b1)}
+.mapmark .half.on.b2{fill:var(--set-b2);stroke:var(--set-b2)}
+.slotmapmark .half.on.s1{fill:var(--set-s1)}
+.slotmapmark .half.on.s2{fill:var(--set-s2);stroke:var(--set-s2)}
+
 /* control panel — the controls only; the compiled sequence lives in its
    own column (.seqpanel) so its height isn't limited by how tall the
    controls happen to be. */
@@ -54,8 +71,10 @@ h1{font-size:17px;margin:0 0 2px;letter-spacing:-.01em}
       color:var(--ink);border-radius:9px;padding:7px 12px;min-width:40px;text-align:center;
       cursor:pointer;user-select:none;transition:all .13s}
 .chip:hover{border-color:#cfd0cb}
-.chip.on.bend{background:var(--bend);border-color:var(--bend);color:#fff}
-.chip.on.split{background:var(--split);border-color:var(--split);color:#fff}
+.chip.on.b1{background:var(--set-b1);border-color:var(--set-b1);color:#fff}
+.chip.on.b2{background:var(--set-b2);border-color:var(--set-b2);color:#fff}
+.chip.on.s1{background:var(--set-s1);border-color:var(--set-s1);color:#fff}
+.chip.on.s2{background:var(--set-s2);border-color:var(--set-s2);color:#fff}
 .chip.hidden{display:none}
 .row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:2px 0 16px}
 .row label{font-size:13px;font-weight:600}
@@ -74,7 +93,8 @@ h1{font-size:17px;margin:0 0 2px;letter-spacing:-.01em}
 .setrow{display:flex;align-items:center;gap:10px;margin:0 0 9px}
 .setlab{font-family:var(--mono);font-size:12px;font-weight:700;color:#fff;border-radius:7px;
         padding:4px 8px;flex:0 0 auto;min-width:26px;text-align:center}
-.setlab.b{background:var(--bend)} .setlab.s{background:var(--split)}
+.setlab.b1{background:var(--set-b1)} .setlab.b2{background:var(--set-b2)}
+.setlab.s1{background:var(--set-s1)} .setlab.s2{background:var(--set-s2)}
 .setrow .chips{flex:1}
 
 /* transport */
