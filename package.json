@@ -1,0 +1,11 @@
+{
+  "name": "finger-combos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Finger Fitness routine — a programmable hand and a routine compiler.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"test/**/*.test.mjs\"",
+    "serve": "python3 -m http.server 8000"
+  }
+}

@@ -1,0 +1,62 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Finger Fitness routine</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+
+<div class="stage">
+  <svg id="hand" viewBox="0 0 440 560" aria-label="Programmable hand diagram"></svg>
+</div>
+
+<div class="panel">
+  <h1>Finger Fitness routine</h1>
+  <p class="sub">Put fingers in the bend sets (B1/B2) and slots in the split sets (S1/S2).
+    The holy sequence compiles into an explicit, per-finger routine and plays it on the
+    hand — a code-driven puppet whose digits all come from one ordered array, with slots
+    as the gaps between consecutive digits.</p>
+
+  <div class="err" id="err" hidden></div>
+
+  <div class="row">
+    <label for="thumbSw">Enable thumb</label>
+    <label class="switch" for="thumbSw"><input type="checkbox" id="thumbSw"><span class="track"><span class="knob"></span></span></label>
+  </div>
+
+  <div class="row">
+    <label for="handSw">Right hand</label>
+    <label class="switch" for="handSw"><input type="checkbox" id="handSw"><span class="track"><span class="knob"></span></span></label>
+  </div>
+
+  <h2 class="sechead">Sets</h2>
+  <div class="sets">
+    <div class="setrow"><span class="setlab b">B1</span><div class="chips" id="B1"></div></div>
+    <div class="setrow"><span class="setlab b">B2</span><div class="chips" id="B2"></div></div>
+    <div class="setrow"><span class="setlab s">S1</span><div class="chips" id="S1"></div></div>
+    <div class="setrow"><span class="setlab s">S2</span><div class="chips" id="S2"></div></div>
+  </div>
+
+  <div class="divider"></div>
+
+  <h2 class="sechead">Playback</h2>
+  <div class="row">
+    <label for="loopSw">Loop</label>
+    <label class="switch" for="loopSw"><input type="checkbox" id="loopSw"><span class="track"><span class="knob"></span></span></label>
+  </div>
+  <div class="transport">
+    <button class="tbtn" id="btnReset" title="Reset to start">⟲</button>
+    <button class="tbtn" id="btnPrev" title="Previous">◀</button>
+    <button class="tbtn play" id="btnPlay" title="Play/pause">▶</button>
+    <button class="tbtn" id="btnNext" title="Next">▶▏</button>
+    <span class="tempo">slow<input type="range" id="tempo" min="180" max="1200" step="20" value="640">fast</span>
+  </div>
+
+  <div class="now rest" id="now">— ready —</div>
+</div>
+
+<div class="seqpanel">
+  <h2 class="sechead">Sequence</h2>
+  <div class="seqbox" id="seqbox"></div>
+</div>
+
+<script type="module" src="src/app.js"></script>

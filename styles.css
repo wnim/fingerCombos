@@ -1,0 +1,129 @@
+:root{
+  --ink:#23252b;          /* line art */
+  --ink-soft:#9aa0ab;     /* secondary lines */
+  --paper:#ffffff;
+  --palm:#f3f4f6;
+  --bend:#d97706;         /* state: bent  (amber) */
+  --split:#0d9488;        /* state: split (teal)  */
+  --bg:#fbfbfa;
+  --panel:#ffffff;
+  --line:#e7e7e4;
+  --muted:#6b7280;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);
+     display:flex;gap:28px;padding:26px;flex-wrap:wrap;align-items:stretch;
+     min-height:100vh}
+.stage{flex:1 1 300px;min-width:260px;display:flex;justify-content:center;align-items:center}
+svg{width:100%;max-width:520px;height:auto;display:block;transition:transform .15s}
+svg.right{transform:scaleX(-1)}    /* mirror the whole hand for a right-hand view */
+
+/* line-art defaults */
+.seg{stroke:var(--ink);stroke-width:2.4;stroke-linejoin:round;fill:var(--paper)}
+.palm{stroke:var(--ink);stroke-width:2.6;fill:var(--palm);stroke-linejoin:round}
+.knuckle{fill:none;stroke:var(--ink-soft);stroke-width:1.6}
+.crease{stroke:var(--ink);stroke-width:2;stroke-linecap:round}
+.nail{fill:#fff;stroke:var(--ink);stroke-width:1.8;stroke-linejoin:round}
+.cuticle{fill:none;stroke:var(--ink-soft);stroke-width:1.4;stroke-linecap:round}
+.shade{stroke:var(--ink-soft);stroke-width:1.6;stroke-linecap:round;opacity:.6}
+.gapmark line{stroke:var(--split);stroke-width:3;stroke-linecap:round;opacity:0;transition:opacity .18s}
+.gapmark.on line{opacity:1}
+.gaplabel{font-family:var(--mono);font-size:12px;fill:var(--split);opacity:0;transition:opacity .18s;text-anchor:middle;
+          transform-box:fill-box;transform-origin:center}
+.gapmark.on .gaplabel{opacity:1}
+svg.right .gaplabel{transform:scaleX(-1)}   /* un-mirror the digits so slot labels stay readable */
+
+/* control panel — the controls only; the compiled sequence lives in its
+   own column (.seqpanel) so its height isn't limited by how tall the
+   controls happen to be. */
+.panel{flex:0 0 330px;max-width:360px;background:var(--panel);border:1px solid var(--line);
+       border-radius:14px;padding:20px 20px 18px;
+       max-height:calc(100vh - 52px);overflow-y:auto}
+h1{font-size:17px;margin:0 0 2px;letter-spacing:-.01em}
+.sub{color:var(--muted);font-size:12.5px;margin:0 0 16px;line-height:1.5}
+.group{margin:0 0 16px}
+.grouphead{display:flex;align-items:baseline;justify-content:space-between;margin:0 0 8px}
+.grouphead b{font-size:13px;font-weight:600}
+.grouphead .dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:6px;vertical-align:middle}
+.grouphead small{color:var(--muted);font-size:11px}
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{font-family:var(--mono);font-size:13px;border:1.5px solid var(--line);background:#fff;
+      color:var(--ink);border-radius:9px;padding:7px 12px;min-width:40px;text-align:center;
+      cursor:pointer;user-select:none;transition:all .13s}
+.chip:hover{border-color:#cfd0cb}
+.chip.on.bend{background:var(--bend);border-color:var(--bend);color:#fff}
+.chip.on.split{background:var(--split);border-color:var(--split);color:#fff}
+.chip.hidden{display:none}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:2px 0 16px}
+.row label{font-size:13px;font-weight:600}
+.switch{position:relative;width:42px;height:24px;flex:0 0 auto;cursor:pointer}
+.switch input{opacity:0;width:0;height:0}
+.track{position:absolute;inset:0;background:#e3e3df;border-radius:999px;transition:.15s}
+.knob{position:absolute;top:3px;left:3px;width:18px;height:18px;background:#fff;border-radius:50%;
+           transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.switch input:checked + .track{background:var(--ink)}
+.switch input:checked + .track .knob{left:21px}
+.divider{height:1px;background:var(--line);margin:14px 0}
+.err{background:#fdecec;border:1px solid #f2bcbc;color:#a1201f;border-radius:10px;
+     padding:10px 12px;margin:0 0 14px;font-size:12.5px;line-height:1.5}
+
+/* sets */
+.setrow{display:flex;align-items:center;gap:10px;margin:0 0 9px}
+.setlab{font-family:var(--mono);font-size:12px;font-weight:700;color:#fff;border-radius:7px;
+        padding:4px 8px;flex:0 0 auto;min-width:26px;text-align:center}
+.setlab.b{background:var(--bend)} .setlab.s{background:var(--split)}
+.setrow .chips{flex:1}
+
+/* transport */
+.transport{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:2px 0 12px}
+.tbtn{width:38px;height:38px;border:1.5px solid var(--line);background:#fff;border-radius:10px;
+      cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;transition:.13s}
+.tbtn:hover{border-color:#cfd0cb;background:#fafafa}
+.tbtn.play{background:var(--ink);border-color:var(--ink);color:#fff}
+/* own row: four 38px buttons already fill the panel width */
+.tempo{flex:1 1 100%;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)}
+.tempo input{flex:1 1 0;min-width:0}
+
+/* current instruction */
+.now{font-family:var(--mono);font-size:13.5px;background:#f7f7f5;border:1px solid var(--line);
+     border-radius:10px;padding:11px 12px;margin:0 0 10px;min-height:20px}
+.now .tok{color:var(--muted);margin-right:10px}
+.now.rest{color:var(--muted)}
+
+/* sequence panel — its own full-height column, so the list's height is
+   never squeezed by how much room the controls take: on a normal-height
+   screen all 32 steps are visible with no inner scrollbar. min-height:0 on
+   the flex child lets it actually shrink instead of overflowing the page
+   when space is tight. Width is sized to the content (the longest row is
+   "13 -S1&S2 unsplit 34 & split 12"), not stretched to fill leftover space —
+   flex-grow:0 so .stage takes up any extra width instead.               */
+.seqpanel{flex:0 0 360px;max-width:360px;min-width:280px;display:flex;flex-direction:column;
+          max-height:calc(100vh - 52px)}
+.seqpanel .sechead{flex:0 0 auto}
+.seqbox{position:relative;flex:1 1 120px;min-height:120px;overflow:auto;border:1px solid var(--line);
+        border-radius:10px;background:var(--panel)}
+.seqrow{display:flex;gap:10px;align-items:baseline;padding:6px 11px;font-size:12.5px;
+        border-bottom:1px solid #f1f1ee;cursor:pointer}
+.seqrow:last-child{border-bottom:0}
+.seqrow:hover{background:#fafafa}
+.seqrow.cur{background:#eef6f5}
+.seqrow .i{font-family:var(--mono);color:var(--muted);flex:0 0 22px;text-align:right}
+.seqrow .tok{font-family:var(--mono);flex:0 0 74px}
+.seqrow .lab{color:#3a3d44}
+.seqrow.cur .tok{color:var(--ink);font-weight:700}
+
+/* section heads */
+.sechead{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+         color:var(--muted);margin:0 0 9px}
+
+/* narrow/short screens: a full-height column doesn't help when there's no
+   room to spare, so fall back to a page that scrolls as a whole. */
+@media (max-width:820px), (max-height:640px){
+  body{align-items:flex-start}
+  .panel{max-height:none;overflow-y:visible}
+  .seqpanel{max-height:none}
+  .seqbox{flex:0 0 auto;max-height:320px}
+}
