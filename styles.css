@@ -63,12 +63,23 @@ svg.right .setbox-label{transform:scaleX(-1)}   /* un-mirror so labels stay read
 .slotmapmark .chev.s1.on line{stroke:var(--set-s1);opacity:1}
 .slotmapmark .chev.s2.on line{stroke:var(--set-s2);opacity:1}
 
+.entry-label{font-family:var(--mono);font-size:12px;font-weight:700;text-anchor:middle;
+             fill:var(--set-s1);transform-box:fill-box;transform-origin:center}
+svg.right .entry-label{transform:scaleX(-1)}    /* un-mirror so it stays readable */
+
 /* control panel — the controls only; the compiled sequence lives in its
    own column (.seqpanel) so its height isn't limited by how tall the
    controls happen to be. */
 .panel{flex:0 0 330px;max-width:360px;background:var(--panel);border:1px solid var(--line);
        border-radius:14px;padding:20px 20px 18px;
        max-height:calc(100vh - 52px);overflow-y:auto}
+/* a full-width native scrollbar sits flush against the edge and squares off
+   the rounded corner it crosses — slim it down and inset its track instead */
+.panel, .seqbox{scrollbar-width:thin;scrollbar-color:#cfd0cb transparent}
+.panel::-webkit-scrollbar, .seqbox::-webkit-scrollbar{width:8px}
+.panel::-webkit-scrollbar-track, .seqbox::-webkit-scrollbar-track{background:transparent;margin-block:14px}
+.panel::-webkit-scrollbar-thumb, .seqbox::-webkit-scrollbar-thumb{background:#cfd0cb;border-radius:8px;border:2px solid var(--panel);background-clip:padding-box}
+.panel::-webkit-scrollbar-thumb:hover, .seqbox::-webkit-scrollbar-thumb:hover{background:#b9bab4;background-clip:padding-box}
 h1{font-size:17px;margin:0 0 2px;letter-spacing:-.01em}
 .sub{color:var(--muted);font-size:12.5px;margin:0 0 16px;line-height:1.5}
 .group{margin:0 0 16px}

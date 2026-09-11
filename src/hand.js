@@ -48,6 +48,7 @@ export function createHand(svg, {onStateChange}={}){
   let GAPS={};        // slotId -> node
   let BOXES={};       // 'B1'|'B2' -> <g>   set-map boxes, rebuilt per paint (bend sets)
   let SLOTMAP={};     // slotId -> {s1, s2} set-map chevrons (split sets)
+  let ENTRYLABEL=null;// <g> — the "then here" caption, rebuilt per paint
   let order=[], lay={};
   let raf=null;
   const state={ enableThumb:false, bends:new Set(), splits:new Set() };
@@ -59,7 +60,7 @@ export function createHand(svg, {onStateChange}={}){
     svg.innerHTML='';
     order=digitOrder(enableThumb);
     lay=layout(order);
-    DIGITS={}; GAPS={}; BOXES={}; SLOTMAP={};
+    DIGITS={}; GAPS={}; BOXES={}; SLOTMAP={}; ENTRYLABEL=null;
 
     // palm
     svg.appendChild(el('path',{class:'palm', d:
@@ -77,6 +78,9 @@ export function createHand(svg, {onStateChange}={}){
     const b1box=el('g',{class:'setbox'}), b2box=el('g',{class:'setbox'});
     mapLayer.appendChild(b1box); mapLayer.appendChild(b2box);
     BOXES={B1:b1box, B2:b2box};
+    const entryLabel=el('g',{class:'entrylabel'});
+    mapLayer.appendChild(entryLabel);
+    ENTRYLABEL=entryLabel;
 
     slotsOf(order).forEach(slot=>{
       const [a,b]=[slot[0], slot.slice(1)];
@@ -90,15 +94,17 @@ export function createHand(svg, {onStateChange}={}){
       gapLayer.appendChild(g); GAPS[slot]=g;
 
       // set-map chevrons: a mini "V" per split set, S1 left / S2 right,
-      // well above the live chevron so the two never collide.
+      // sitting right at the same gap the live chevron marks — same
+      // footprint as the app's existing chevron, just colored per set,
+      // so it reads as "here", not as a floating decoration.
       const sm=el('g',{class:'slotmapmark','data-slot':slot});
-      const cx1=mx-9, cx2=mx+9, topY=my-38, botY=my-24;
+      const cx1=mx-7, cx2=mx+7, topY=my-16, botY=my-4;
       const s1=el('g',{class:'chev s1'});
-      s1.appendChild(el('line',{x1:cx1-6,y1:topY,x2:cx1,y2:botY}));
-      s1.appendChild(el('line',{x1:cx1+6,y1:topY,x2:cx1,y2:botY}));
+      s1.appendChild(el('line',{x1:cx1-5,y1:topY,x2:cx1,y2:botY}));
+      s1.appendChild(el('line',{x1:cx1+5,y1:topY,x2:cx1,y2:botY}));
       const s2=el('g',{class:'chev s2'});
-      s2.appendChild(el('line',{x1:cx2-6,y1:topY,x2:cx2,y2:botY}));
-      s2.appendChild(el('line',{x1:cx2+6,y1:topY,x2:cx2,y2:botY}));
+      s2.appendChild(el('line',{x1:cx2-5,y1:topY,x2:cx2,y2:botY}));
+      s2.appendChild(el('line',{x1:cx2+5,y1:topY,x2:cx2,y2:botY}));
       sm.appendChild(s1); sm.appendChild(s2);
       mapLayer.appendChild(sm); SLOTMAP[slot]={s1,s2};
     });
@@ -162,6 +168,13 @@ export function createHand(svg, {onStateChange}={}){
     return runs.map(r=>r.ids);
   }
 
+  /* Only the routine's entry point gets a plain-language caption: the holy
+     sequence always opens by bending B1, then splitting S1 (see
+     docs/sequence.md) — true regardless of what's in the sets — so those
+     two alone can tell someone where to start without narrating the rest
+     of the memorized 32-step routine. B2/S2 stay color-only. */
+  const ENTRY_TEXT = { B1:'start here', S1:'then here' };
+
   /* Bend-set box: a rounded rect around one run's members, tip to knuckle
      line, sized in local (non-rotating) layout coordinates — same
      simplification the gap markers already make. B1/B2 use slightly
@@ -175,6 +188,7 @@ export function createHand(svg, {onStateChange}={}){
     const padX = key==='B1' ? 9  : 18;
     const padTop = key==='B1' ? 26 : 14;
     const padBot = key==='B1' ? 10 : 26;
+    const labelText = ENTRY_TEXT[key];
     runsOf(members).forEach(ids=>{
       let left=Infinity, right=-Infinity, top=Infinity;
       ids.forEach(id=>{
@@ -184,10 +198,27 @@ export function createHand(svg, {onStateChange}={}){
       });
       const x=left-padX, y=top-padTop, w=(right-left)+padX*2, h=(KY+padBot)-y;
       container.appendChild(el('rect',{class:'setbox-rect '+key.toLowerCase(), x, y, width:w, height:h, rx:12}));
-      const label=el('text',{class:'setbox-label '+key.toLowerCase(), x:x+w/2, y:y-7});
-      label.textContent=key;
-      container.appendChild(label);
+      if(labelText){
+        const label=el('text',{class:'setbox-label '+key.toLowerCase(), x:x+w/2, y:y-7});
+        label.textContent=labelText;
+        container.appendChild(label);
+      }
     });
+  }
+
+  /* The "then here" caption attaches to whichever S1 slot is leftmost right
+     now — S1 membership can change under the app's feet, so this is
+     rebuilt fresh each paint rather than fixed at build time. */
+  function paintEntryLabel(){
+    ENTRYLABEL.innerHTML='';
+    const slot = slotsOf(order).find(s=>mapSets.S1.has(s));
+    if(!slot) return;
+    const [a,b]=[slot[0], slot.slice(1)];
+    const pa=lay[a].base, pb=lay[b].base;
+    const mx=(pa.x+pb.x)/2, my=Math.min(pa.y,pb.y);
+    const t=el('text',{class:'entry-label s1', x:mx, y:my-42});
+    t.textContent=ENTRY_TEXT.S1;
+    ENTRYLABEL.appendChild(t);
   }
 
   /* Paint the static set-map overlay from the last sets given to setMap().
@@ -196,6 +227,7 @@ export function createHand(svg, {onStateChange}={}){
   function applySetMap(){
     paintBoxes(BOXES.B1, 'B1', mapSets.B1);
     paintBoxes(BOXES.B2, 'B2', mapSets.B2);
+    paintEntryLabel();
     slotsOf(order).forEach(slot=>{
       const m=SLOTMAP[slot]; if(!m) return;
       m.s1.classList.toggle('on', mapSets.S1.has(slot));

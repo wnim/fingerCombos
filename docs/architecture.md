@@ -105,9 +105,14 @@ More than one hand can exist on a page; nothing is global.
   box that wrongly swallows finger 2. B1 and B2 use different padding (B1
   taller/narrower, B2 shorter/wider) so two boxes sharing a finger read as
   two distinct outlines with non-colliding labels, not a blurred edge. A
-  split set draws as a small colored chevron at its slot, S1 left / S2
-  right, positioned well above the live playback chevron so the two never
-  collide. Driven by `setMap(sets)` (repaint membership) and `showMap(on)`
+  split set draws as a small colored chevron right at its slot — the same
+  spot the live playback chevron occupies, just a distinct shape, since the
+  two are rarely visible at once. Only B1's box and S1's chevron get a text
+  caption ("start here" / "then here"): the holy sequence always opens by
+  bending B1 then splitting S1 regardless of what's in the sets (see
+  `docs/sequence.md`), so that pair alone can orient someone without
+  narrating the rest of the memorized routine; B2/S2 stay color-only.
+  Driven by `setMap(sets)` (repaint membership) and `showMap(on)`
   (toggle visibility via a `.showmap` class on the root `<svg>`) — both
   independent of `setState`/`apply`. Boxes are rebuilt on every `setMap`
   call (their geometry depends on current membership); chevrons are
