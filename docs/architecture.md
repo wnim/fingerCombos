@@ -98,15 +98,22 @@ More than one hand can exist on a page; nothing is global.
 - **Gap markers** are an annotation layer appended **last**, so the digits can't
   occlude the chevrons or the slot label.
 - **Set map** is a second, independent annotation layer: a static, toggleable
-  overlay of B1/B2/S1/S2 *membership* (not the live playback state). Each
-  finger gets two half-marks (B1 left / B2 right, fixed above the extended
-  tip) and each slot gets two half-marks (S1 left / S2 right, fixed above the
-  gap chevron), colored per set and outline-only when not a member. Two
-  halves per digit/slot is what lets overlap show without one hiding the
-  other. Driven by `setMap(sets)` (repaint membership) and `showMap(on)`
+  overlay of B1/B2/S1/S2 *membership* (not the live playback state). A bend
+  set draws as a rounded box around its member fingers — grouped into
+  maximal runs of *adjacent* order-positions first (`runsOf`), so a
+  non-contiguous set like `{1,3}` draws two separate boxes rather than one
+  box that wrongly swallows finger 2. B1 and B2 use different padding (B1
+  taller/narrower, B2 shorter/wider) so two boxes sharing a finger read as
+  two distinct outlines with non-colliding labels, not a blurred edge. A
+  split set draws as a small colored chevron at its slot, S1 left / S2
+  right, positioned well above the live playback chevron so the two never
+  collide. Driven by `setMap(sets)` (repaint membership) and `showMap(on)`
   (toggle visibility via a `.showmap` class on the root `<svg>`) — both
-  independent of `setState`/`apply`, and repainted from the last-given sets
-  at the end of every `build()` so a thumb-triggered rebuild doesn't blank it.
+  independent of `setState`/`apply`. Boxes are rebuilt on every `setMap`
+  call (their geometry depends on current membership); chevrons are
+  pre-built per slot and just toggled. Both repaint from the last-given
+  sets at the end of every `build()`, so a thumb-triggered rebuild (which
+  tears down and recreates the whole SVG) doesn't blank the map.
 - **Animation loop** — per-digit `theta` (rotation, from splits) and `bend`
   (0→1 crossfade) lerp toward targets each frame. Rotation is the puppet motion;
   bend is a picture swap.

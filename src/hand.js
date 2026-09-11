@@ -46,8 +46,8 @@ function rrect(x,y,w,h,rt,rb){           // vertical rounded rect (rt=top radius
 export function createHand(svg, {onStateChange}={}){
   let DIGITS={};      // id -> {node, ext, bent, geom, anim:{theta,bend}, target:{...}}
   let GAPS={};        // slotId -> node
-  let DIGITMAP={};    // id -> {b1, b2}      set-map halves (bend sets)
-  let SLOTMAP={};     // slotId -> {s1, s2}  set-map halves (split sets)
+  let BOXES={};       // 'B1'|'B2' -> <g>   set-map boxes, rebuilt per paint (bend sets)
+  let SLOTMAP={};     // slotId -> {s1, s2} set-map chevrons (split sets)
   let order=[], lay={};
   let raf=null;
   const state={ enableThumb:false, bends:new Set(), splits:new Set() };
@@ -59,7 +59,7 @@ export function createHand(svg, {onStateChange}={}){
     svg.innerHTML='';
     order=digitOrder(enableThumb);
     lay=layout(order);
-    DIGITS={}; GAPS={}; DIGITMAP={}; SLOTMAP={};
+    DIGITS={}; GAPS={}; BOXES={}; SLOTMAP={};
 
     // palm
     svg.appendChild(el('path',{class:'palm', d:
@@ -69,9 +69,15 @@ export function createHand(svg, {onStateChange}={}){
     // gap markers — an annotation layer, appended LAST so the digits
     // can't occlude the chevrons or the slot label.
     const gapLayer=el('g',{class:'gaplayer'});
-    // set map — a second, independent annotation layer: static S1/S2
-    // membership, well above the live chevron so the two never collide.
+    // set map — a second, independent annotation layer: static B1/B2/S1/S2
+    // MEMBERSHIP (not the live playback state). Bend sets get a box drawn
+    // around their member fingers; split sets get a colored chevron at
+    // their slot, well above the live one so the two never collide.
     const mapLayer=el('g',{class:'maplayer'});
+    const b1box=el('g',{class:'setbox'}), b2box=el('g',{class:'setbox'});
+    mapLayer.appendChild(b1box); mapLayer.appendChild(b2box);
+    BOXES={B1:b1box, B2:b2box};
+
     slotsOf(order).forEach(slot=>{
       const [a,b]=[slot[0], slot.slice(1)];
       const pa=lay[a].base, pb=lay[b].base;
@@ -83,23 +89,18 @@ export function createHand(svg, {onStateChange}={}){
       g.appendChild(t);
       gapLayer.appendChild(g); GAPS[slot]=g;
 
+      // set-map chevrons: a mini "V" per split set, S1 left / S2 right,
+      // well above the live chevron so the two never collide.
       const sm=el('g',{class:'slotmapmark','data-slot':slot});
-      const s1=el('rect',{class:'half s1', x:mx-11, y:my-41, width:9, height:8, rx:2});
-      const s2=el('rect',{class:'half s2', x:mx+2,  y:my-41, width:9, height:8, rx:2});
+      const cx1=mx-9, cx2=mx+9, topY=my-38, botY=my-24;
+      const s1=el('g',{class:'chev s1'});
+      s1.appendChild(el('line',{x1:cx1-6,y1:topY,x2:cx1,y2:botY}));
+      s1.appendChild(el('line',{x1:cx1+6,y1:topY,x2:cx1,y2:botY}));
+      const s2=el('g',{class:'chev s2'});
+      s2.appendChild(el('line',{x1:cx2-6,y1:topY,x2:cx2,y2:botY}));
+      s2.appendChild(el('line',{x1:cx2+6,y1:topY,x2:cx2,y2:botY}));
       sm.appendChild(s1); sm.appendChild(s2);
       mapLayer.appendChild(sm); SLOTMAP[slot]={s1,s2};
-    });
-
-    // set map — finger side: two half-marks per digit (B1 left / B2 right),
-    // fixed above the extended tip so they never sit inside the bent-fold
-    // drawing, whichever crossfade is showing.
-    order.forEach(id=>{
-      const cfg=DIGIT_TABLE[id], b=lay[id].base, w=lay[id].w, tipY=b.y-cfg.len;
-      const g=el('g',{class:'mapmark','data-id':id});
-      const b1=el('rect',{class:'half b1', x:b.x-w*0.28-9, y:tipY-16, width:9, height:8, rx:2});
-      const b2=el('rect',{class:'half b2', x:b.x+w*0.28,   y:tipY-16, width:9, height:8, rx:2});
-      g.appendChild(b1); g.appendChild(b2);
-      mapLayer.appendChild(g); DIGITMAP[id]={b1,b2};
     });
 
     // digits
@@ -147,15 +148,54 @@ export function createHand(svg, {onStateChange}={}){
     applySetMap();
   }
 
+  /* Group a set's members into maximal runs of ADJACENT order-positions, so
+     a non-contiguous set (e.g. {1,3} with 2 left out) draws two separate
+     boxes instead of one box that wrongly swallows the finger in between. */
+  function runsOf(members){
+    const idxs = order.map((id,i)=>({id,i})).filter(o=>members.has(o.id));
+    const runs=[];
+    idxs.forEach(({id,i})=>{
+      const cur=runs[runs.length-1];
+      if(cur && i===cur.last+1){ cur.ids.push(id); cur.last=i; }
+      else runs.push({ids:[id], last:i});
+    });
+    return runs.map(r=>r.ids);
+  }
+
+  /* Bend-set box: a rounded rect around one run's members, tip to knuckle
+     line, sized in local (non-rotating) layout coordinates — same
+     simplification the gap markers already make. B1/B2 use slightly
+     different padding so two boxes sharing a finger read as two outlines,
+     not one blurred edge. */
+  function paintBoxes(container, key, members){
+    container.innerHTML='';
+    // B1 sits taller/narrower, B2 shorter/wider — a consistent nesting so
+    // the two boxes (and their labels) stay visually separate even when
+    // they share a finger, instead of the labels colliding into a blur.
+    const padX = key==='B1' ? 9  : 18;
+    const padTop = key==='B1' ? 26 : 14;
+    const padBot = key==='B1' ? 10 : 26;
+    runsOf(members).forEach(ids=>{
+      let left=Infinity, right=-Infinity, top=Infinity;
+      ids.forEach(id=>{
+        const b=lay[id].base, w=lay[id].w, tip=b.y-DIGIT_TABLE[id].len;
+        left=Math.min(left, b.x-w/2); right=Math.max(right, b.x+w/2);
+        top=Math.min(top, tip);
+      });
+      const x=left-padX, y=top-padTop, w=(right-left)+padX*2, h=(KY+padBot)-y;
+      container.appendChild(el('rect',{class:'setbox-rect '+key.toLowerCase(), x, y, width:w, height:h, rx:12}));
+      const label=el('text',{class:'setbox-label '+key.toLowerCase(), x:x+w/2, y:y-7});
+      label.textContent=key;
+      container.appendChild(label);
+    });
+  }
+
   /* Paint the static set-map overlay from the last sets given to setMap().
      Re-run at the end of every build() so a thumb-triggered rebuild (which
      tears down and recreates every mark) doesn't silently blank the map. */
   function applySetMap(){
-    order.forEach(id=>{
-      const m=DIGITMAP[id]; if(!m) return;
-      m.b1.classList.toggle('on', mapSets.B1.has(id));
-      m.b2.classList.toggle('on', mapSets.B2.has(id));
-    });
+    paintBoxes(BOXES.B1, 'B1', mapSets.B1);
+    paintBoxes(BOXES.B2, 'B2', mapSets.B2);
     slotsOf(order).forEach(slot=>{
       const m=SLOTMAP[slot]; if(!m) return;
       m.s1.classList.toggle('on', mapSets.S1.has(slot));
