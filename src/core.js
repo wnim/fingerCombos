@@ -146,87 +146,65 @@ export function hasSiblingSubset(sets){
    RANDOM GENERATOR
    ============================================================ */
 
-/* Randomly populate all four sets for `order`. `legalPhysical=true` (i.e.
-   "Split bends" off) keeps a candidate only if adding it still compiles
-   the whole ROUTINE with no illegal overlap (hasIllegalOverlap), so the
-   result always plays as a physically sound routine. `allowNesting=false`
-   (i.e. "Nested sets" off) additionally keeps neither of B1/B2 (or S1/S2)
-   a subset of the other, so no step is ever a no-op (hasSiblingSubset).
-   Both default to the stricter behavior. `rng` defaults to Math.random but
-   is injectable so the algorithm itself can be tested deterministically.
-
-   Bends are filled before splits, on purpose: with nothing split yet, any
-   bend is trivially legal, so B1/B2 always land on a real choice. Splits
-   are then filtered against those fixed bends. Doing it the other way
-   round lets S1/S2 grab every slot first and legally starves B1/B2 down
-   to empty — physically correct (nothing left to bend into) but a
-   frustrating thing for a "surprise me" button to hand back. Filling B1
-   before B2 (and S1 before S2) the same way lets the subset check simply
-   look at what's already landed in the other set.                      */
-/* One draw of all four sets. Split out of randomSets so it can be rerolled
-   whole (see MAX_RANDOM_TRIES below) instead of patched set-by-set. */
-function attemptRandomSets(order, slots, legalPhysical, allowNesting, rng){
-  const out = {B1:new Set(), B2:new Set(), S1:new Set(), S2:new Set()};
-  const isSound = () => compile(out, order).every(c=>!hasIllegalOverlap(c.state.bends, c.state.splits));
-  const isUnnested = () => !hasSiblingSubset(out);
-
-  const fill = (key, universe, reserveForSibling=false) => {
-    const candidates = [...universe];
-    for(let i=candidates.length-1;i>0;i--){
-      const j=Math.floor(rng()*(i+1));
-      [candidates[i],candidates[j]]=[candidates[j],candidates[i]];
-    }
-    for(const id of candidates){
-      if(rng() >= 0.45) continue;
-      out[key].add(id);
-      if((legalPhysical && !isSound()) || (!allowNesting && !isUnnested())) out[key].delete(id);
-    }
-    // Every set gets at least one member when one is available, so a fresh
-    // randomization never lands on the "empty set" warning by chance.
-    if(!out[key].size){
-      for(const id of candidates){
-        out[key].add(id);
-        if((legalPhysical && !isSound()) || (!allowNesting && !isUnnested())) out[key].delete(id);
-        else break;
-      }
-    }
-    // Leave the sibling at least one option: if this set (filled first)
-    // swallowed the whole universe and nesting is disallowed, ANY non-empty
-    // sibling would be a subset of it, starving the sibling to empty for
-    // no reason but draw order. Only B1/B2 need this — S1/S2 only forbid
-    // exact equality, so S1 at 100% still leaves every proper subset open
-    // to S2 (trimming S1 here would just needlessly ban a legal result).
-    if(reserveForSibling && !allowNesting && universe.length>1 && out[key].size===universe.length){
-      out[key].delete(candidates[candidates.length-1]);
-    }
-  };
-
-  fill('B1', order, true); fill('B2', order);
-  fill('S1', slots); fill('S2', slots);
-  return out;
+/* Uniform rejection sampling: draw B1/B2 (over `order`) and S1/S2 (over
+   `slotsOf(order)`) each as an independent, uniformly-random NON-EMPTY
+   subset, then keep the whole quadruple only if it's legal — same two
+   filters countPossibleCombinations enumerates: `legalPhysical=true` (i.e.
+   "Split bends" off) requires the compiled ROUTINE to have no illegal
+   overlap (hasIllegalOverlap); `allowNesting=false` (i.e. "Nested sets"
+   off) requires neither of B1/B2 nor S1/S2 be a subset of its sibling
+   (hasSiblingSubset). On rejection, redraw all four from scratch — never
+   patch one set — which is what makes this exact: if X is uniform over
+   every non-empty quadruple and T is the legal subset, then for any
+   t in T, P(X=t | X∈T) = (1/|S|)/(|T|/|S|) = 1/|T|, constant across T.
+   Both halves of that argument are where the old fill()-based generator
+   broke down — it drew each member via an independent ~45% coin flip
+   (size-biased, not "every subset equally likely") and filled B1, then
+   B2 against B1, then S1, then S2 against everything before it (a
+   conditional/sequential draw, not a joint one) — so siblings like B1
+   and B2 were never actually interchangeable in the result. `rng`
+   defaults to Math.random but is injectable for deterministic tests. */
+function randomNonEmptySubset(universe, rng){
+  const mask = 1 + Math.floor(rng() * ((1<<universe.length) - 1));   // uniform in [1, 2^n-1]
+  return new Set(universe.filter((_, i) => mask & (1<<i)));
 }
 
-// Generous headroom over the ~1-3 tries a reroll typically needs (see below).
-const MAX_RANDOM_TRIES = 200;
+/* One fully independent draw of all four sets — kept as its own function
+   so a rejection can redraw all of them atomically (see randomSets). */
+function randomQuadruple(order, slots, rng){
+  return {
+    B1: randomNonEmptySubset(order, rng),
+    B2: randomNonEmptySubset(order, rng),
+    S1: randomNonEmptySubset(slots, rng),
+    S2: randomNonEmptySubset(slots, rng),
+  };
+}
+
+/* Single-candidate mirror of the two filters countPossibleCombinations
+   sums over the whole space. Runs compile() once per candidate (fine —
+   randomSets only ever tests one candidate at a time, unlike
+   countPossibleCombinations which must check every candidate). */
+function isLegalQuadruple(sets, order, legalPhysical, allowNesting){
+  if(!allowNesting && hasSiblingSubset(sets)) return false;
+  if(legalPhysical && compile(sets, order).some(c=>hasIllegalOverlap(c.state.bends, c.state.splits))) return false;
+  return true;
+}
+
+/* Worst-case acceptance ratio across every toggle combination is ~206:1
+   (thumb on, legalPhysical=true, allowNesting=false: 216,225 candidates
+   vs 1,048 legal — see countPossibleCombinations). A cap of 5000 makes
+   the failure probability (1-1/206)^5000 ≈ 2.6e-11 — negligible even
+   summed across a whole test run — while costing microseconds even in
+   the unlucky tail, since each attempt is just one compile() call. */
+const MAX_RANDOM_TRIES = 5000;
 
 export function randomSets(order, legalPhysical, allowNesting = false, rng = Math.random){
   const slots = slotsOf(order);
-
-  /* fill()'s per-set "at least one member" fallback (above) guards each set
-     in isolation, but with legalPhysical on and allowNesting off it can still
-     end up with S1 and S2 (rarely B1/B2) each individually non-empty-capable
-     yet cornered against each other — e.g. only one slot in the whole order
-     is ever physically splittable, S1 claims it, and the only thing left for
-     S2 to claim would make it equal to S1 (illegal). Untangling that would
-     mean re-deriving which digits ROUTINE ever bends simultaneously; instead
-     just reroll the whole draw. A fully-populated result always exists (every
-     digit order has room for it) and a fresh draw finds one almost
-     immediately, so this only ever repeats a handful of times in practice.  */
   for(let i=0;i<MAX_RANDOM_TRIES;i++){
-    const out = attemptRandomSets(order, slots, legalPhysical, allowNesting, rng);
-    if(SET_KEYS.every(k=>out[k].size>0)) return out;
+    const candidate = randomQuadruple(order, slots, rng);
+    if(isLegalQuadruple(candidate, order, legalPhysical, allowNesting)) return candidate;
   }
-  return attemptRandomSets(order, slots, legalPhysical, allowNesting, rng);
+  return randomQuadruple(order, slots, rng);   // ~2.6e-11 chance; see MAX_RANDOM_TRIES above
 }
 
 /* Exact size of the pool randomSets draws from: every non-empty

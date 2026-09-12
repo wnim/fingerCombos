@@ -406,3 +406,54 @@ test('countPossibleCombinations shrinks as the toggles get stricter', () => {
     assert.ok(strictest <= noNest && strictest <= noSplit, `thumb=${thumb}`);
   }
 });
+
+/* Enumerate every legal quadruple as a canonical string key, reusing the
+   same nonEmptySubsets()/legality checks bruteForceCount already trusts. */
+function bruteForceLegalKeys(order, legalPhysical, allowNesting, keyOf){
+  const slots = slotsOf(order);
+  const bSubsets = nonEmptySubsets(order), sSubsets = nonEmptySubsets(slots);
+  const keys = new Set();
+  for(const B1 of bSubsets) for(const B2 of bSubsets){
+    for(const S1 of sSubsets) for(const S2 of sSubsets){
+      const sets={B1,B2,S1,S2};
+      if(!allowNesting && hasSiblingSubset(sets)) continue;
+      if(legalPhysical && compile(sets, order).some(c=>hasIllegalOverlap(c.state.bends, c.state.splits))) continue;
+      keys.add(keyOf(sets));
+    }
+  }
+  return keys;
+}
+
+/* randomSets claims to draw uniformly from exactly the space
+   countPossibleCombinations counts. Prove it statistically: over many
+   draws from one continuous seeded stream, every legal quadruple should
+   turn up, and none should turn up wildly more or less often than any
+   other. Uses the strictest no-thumb case (64 legal quadruples) because
+   that's where the old fill()-based generator's B1-first/reserve-for-
+   sibling asymmetry was most pronounced — a biased generator fails this
+   decisively (some quadruples never appear, or appear many times more
+   often than others), while a uniform one comfortably clears the bound. */
+test('randomSets samples uniformly over the exact legal quadruple space', () => {
+  const order = digitOrder(false);
+  const legalPhysical = true, allowNesting = false;
+  const keyOf = sets => SET_KEYS.map(k => membersOf(sets, k, order).join('.')).join('|');
+
+  const legalKeys = bruteForceLegalKeys(order, legalPhysical, allowNesting, keyOf);
+  assert.equal(legalKeys.size, 64);   // sanity check against countPossibleCombinations
+
+  const N = 1500;                     // ~23.4 expected hits per of 64 bins
+  const rng = mulberry32(20260101);   // one continuous stream, not reseeded per draw
+  const tally = new Map([...legalKeys].map(k => [k, 0]));
+  for(let i=0; i<N; i++){
+    const key = keyOf(randomSets(order, legalPhysical, allowNesting, rng));
+    assert.ok(tally.has(key), `drew a quadruple outside the legal space: ${key}`);
+    tally.set(key, tally.get(key) + 1);
+  }
+
+  const expected = N / legalKeys.size;
+  for(const [key, count] of tally){
+    assert.ok(count > 0, `legal quadruple never drawn in ${N} tries: ${key}`);
+    assert.ok(count > expected/3 && count < expected*3,
+      `quadruple ${key} drawn ${count}x, expected ~${expected.toFixed(1)} — looks non-uniform`);
+  }
+});
