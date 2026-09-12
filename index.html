@@ -10,41 +10,72 @@
 </div>
 
 <div class="panel">
-  <h1>Finger Fitness routine</h1>
-  <p class="sub">Put fingers in the bend sets (B1/B2) and slots in the split sets (S1/S2).
+  <div class="titlerow">
+    <h1>Finger Fitness routine</h1>
+    <button class="descbtn" id="btnDesc" aria-expanded="true" aria-controls="sub" title="Show/hide description">▾</button>
+  </div>
+  <p class="sub" id="sub">Put fingers in the bend sets (B1/B2) and slots in the split sets (S1/S2).
     The holy sequence compiles into an explicit, per-finger routine and plays it on the
     hand — a code-driven puppet whose digits all come from one ordered array, with slots
     as the gaps between consecutive digits.</p>
 
   <div class="err" id="err" hidden></div>
 
-  <div class="row">
+  <div class="row" title="Add the thumb (T) as a fifth digit, so it takes part in slots and every set">
     <label for="thumbSw">Enable thumb</label>
     <label class="switch" for="thumbSw"><input type="checkbox" id="thumbSw"><span class="track"><span class="knob"></span></span></label>
   </div>
 
-  <div class="row">
+  <div class="row" title="Mirror the hand diagram for a right-hand view — cosmetic only, the routine itself is unchanged">
     <label for="handSw">Right hand</label>
     <label class="switch" for="handSw"><input type="checkbox" id="handSw"><span class="track"><span class="knob"></span></span></label>
   </div>
 
-  <div class="row">
+  <div class="row" title="Switch the page to a dark color scheme">
+    <label for="darkSw">Dark mode</label>
+    <label class="switch" for="darkSw"><input type="checkbox" id="darkSw"><span class="track"><span class="knob"></span></span></label>
+  </div>
+
+  <div class="row" title="Overlay B1/B2 as boxes and S1/S2 as chevrons on the hand, showing set membership rather than live playback">
     <label for="mapSw">Show set map</label>
     <label class="switch" for="mapSw"><input type="checkbox" id="mapSw"><span class="track"><span class="knob"></span></span></label>
   </div>
 
+  <div class="row" title="Allow a slot to split even while a bordering finger is bent. Off keeps only physically legal combinations">
+    <label for="splitBendsSw">Split bends</label>
+    <label class="switch" for="splitBendsSw"><input type="checkbox" id="splitBendsSw"><span class="track"><span class="knob"></span></span></label>
+  </div>
+
+  <div class="row" title="Allow one of B1/B2 (or S1/S2) to fully contain the other. Off avoids steps that would move nothing">
+    <label for="nestedSw">Nested sets</label>
+    <label class="switch" for="nestedSw"><input type="checkbox" id="nestedSw"><span class="track"><span class="knob"></span></span></label>
+  </div>
+
   <h2 class="sechead">Sets</h2>
+  <button class="randbtn" id="btnRandom" title="Randomly populate all four sets">🎲 Randomize sets <span class="randcount" id="randCount"></span></button>
   <div class="sets">
-    <div class="setrow"><span class="setlab b1">B1</span><div class="chips" id="B1"></div></div>
-    <div class="setrow"><span class="setlab b2">B2</span><div class="chips" id="B2"></div></div>
-    <div class="setrow"><span class="setlab s1">S1</span><div class="chips" id="S1"></div></div>
-    <div class="setrow"><span class="setlab s2">S2</span><div class="chips" id="S2"></div></div>
+    <div class="setgroup">
+      <div class="setrow"><span class="setlab b1">B1</span><div class="chips" id="B1"></div></div>
+      <div class="setwarn" id="B1warn" hidden>B1 is empty — pick at least one finger</div>
+    </div>
+    <div class="setgroup">
+      <div class="setrow"><span class="setlab b2">B2</span><div class="chips" id="B2"></div></div>
+      <div class="setwarn" id="B2warn" hidden>B2 is empty — pick at least one finger</div>
+    </div>
+    <div class="setgroup">
+      <div class="setrow"><span class="setlab s1">S1</span><div class="chips" id="S1"></div></div>
+      <div class="setwarn" id="S1warn" hidden>S1 is empty — pick at least one slot</div>
+    </div>
+    <div class="setgroup">
+      <div class="setrow"><span class="setlab s2">S2</span><div class="chips" id="S2"></div></div>
+      <div class="setwarn" id="S2warn" hidden>S2 is empty — pick at least one slot</div>
+    </div>
   </div>
 
   <div class="divider"></div>
 
   <h2 class="sechead">Playback</h2>
-  <div class="row">
+  <div class="row" title="Restart from the beginning automatically when playback reaches the end">
     <label for="loopSw">Loop</label>
     <label class="switch" for="loopSw"><input type="checkbox" id="loopSw"><span class="track"><span class="knob"></span></span></label>
   </div>

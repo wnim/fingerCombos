@@ -13,14 +13,59 @@
   --panel:#ffffff;
   --line:#e7e7e4;
   --muted:#6b7280;
+  --surface:#ffffff;      /* chip/button/nail fill */
+  --surface-hover:#fafafa;
+  --track-off:#e3e3df;
+  --knob:#ffffff;
+  --switch-on:var(--ink);
+  --scroll-thumb:#cfd0cb;
+  --scroll-thumb-hover:#b9bab4;
+  --now-bg:#f7f7f5;
+  --seqrow-border:#f1f1ee;
+  --seqrow-hover:#fafafa;
+  --seqrow-cur:#eef6f5;
+  --seqrow-lab:#3a3d44;
+  --err-bg:#fdecec;
+  --err-border:#f2bcbc;
+  --err-text:#a1201f;
   --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+}
+body.dark{
+  --ink:#e5e7eb;
+  --ink-soft:#7a828e;
+  --paper:#20222a;
+  --palm:#282a33;
+  --bend:#f59e0b;
+  --split:#2dd4bf;
+  --set-b1:#f59e0b;
+  --set-b2:#f87171;
+  --set-s1:#2dd4bf;
+  --set-s2:#60a5fa;
+  --bg:#16171c;
+  --panel:#1c1e25;
+  --line:#33353e;
+  --muted:#8a91a0;
+  --surface:#262832;
+  --surface-hover:#2d2f3a;
+  --track-off:#3a3c46;
+  --switch-on:#3b82f6;
+  --scroll-thumb:#40424d;
+  --scroll-thumb-hover:#4d4f5c;
+  --now-bg:#20222a;
+  --seqrow-border:#2a2c34;
+  --seqrow-hover:#22242c;
+  --seqrow-cur:#1f2f30;
+  --seqrow-lab:#c7cad1;
+  --err-bg:#3a1f1f;
+  --err-border:#5c2b2b;
+  --err-text:#f2a3a3;
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
 body{background:var(--bg);color:var(--ink);font-family:var(--font);
      display:flex;gap:28px;padding:26px;flex-wrap:wrap;align-items:stretch;
-     min-height:100vh}
+     min-height:100vh;transition:background .15s,color .15s}
 .stage{flex:1 1 300px;min-width:260px;display:flex;justify-content:center;align-items:center}
 svg{width:100%;max-width:520px;height:auto;display:block;transition:transform .15s}
 svg.right{transform:scaleX(-1)}    /* mirror the whole hand for a right-hand view */
@@ -30,7 +75,7 @@ svg.right{transform:scaleX(-1)}    /* mirror the whole hand for a right-hand vie
 .palm{stroke:var(--ink);stroke-width:2.6;fill:var(--palm);stroke-linejoin:round}
 .knuckle{fill:none;stroke:var(--ink-soft);stroke-width:1.6}
 .crease{stroke:var(--ink);stroke-width:2;stroke-linecap:round}
-.nail{fill:#fff;stroke:var(--ink);stroke-width:1.8;stroke-linejoin:round}
+.nail{fill:var(--surface);stroke:var(--ink);stroke-width:1.8;stroke-linejoin:round}
 .cuticle{fill:none;stroke:var(--ink-soft);stroke-width:1.4;stroke-linecap:round}
 .shade{stroke:var(--ink-soft);stroke-width:1.6;stroke-linecap:round;opacity:.6}
 .gapmark line{stroke:var(--split);stroke-width:3;stroke-linecap:round;opacity:0;transition:opacity .18s}
@@ -75,42 +120,61 @@ svg.right .entry-label{transform:scaleX(-1)}    /* un-mirror so it stays readabl
        max-height:calc(100vh - 52px);overflow-y:auto}
 /* a full-width native scrollbar sits flush against the edge and squares off
    the rounded corner it crosses — slim it down and inset its track instead */
-.panel, .seqbox{scrollbar-width:thin;scrollbar-color:#cfd0cb transparent}
+.panel, .seqbox{scrollbar-width:thin;scrollbar-color:var(--scroll-thumb) transparent}
 .panel::-webkit-scrollbar, .seqbox::-webkit-scrollbar{width:8px}
 .panel::-webkit-scrollbar-track, .seqbox::-webkit-scrollbar-track{background:transparent;margin-block:14px}
-.panel::-webkit-scrollbar-thumb, .seqbox::-webkit-scrollbar-thumb{background:#cfd0cb;border-radius:8px;border:2px solid var(--panel);background-clip:padding-box}
-.panel::-webkit-scrollbar-thumb:hover, .seqbox::-webkit-scrollbar-thumb:hover{background:#b9bab4;background-clip:padding-box}
+.panel::-webkit-scrollbar-thumb, .seqbox::-webkit-scrollbar-thumb{background:var(--scroll-thumb);border-radius:8px;border:2px solid var(--panel);background-clip:padding-box}
+.panel::-webkit-scrollbar-thumb:hover, .seqbox::-webkit-scrollbar-thumb:hover{background:var(--scroll-thumb-hover);background-clip:padding-box}
+.titlerow{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
 h1{font-size:17px;margin:0 0 2px;letter-spacing:-.01em}
+.descbtn{border:0;background:none;color:var(--muted);cursor:pointer;font-size:13px;
+         line-height:1;padding:4px;flex:0 0 auto;transition:transform .15s}
+.descbtn:hover{color:var(--ink)}
+.descbtn.collapsed{transform:rotate(-90deg)}
 .sub{color:var(--muted);font-size:12.5px;margin:0 0 16px;line-height:1.5}
+.sub.collapsed{display:none}
 .group{margin:0 0 16px}
 .grouphead{display:flex;align-items:baseline;justify-content:space-between;margin:0 0 8px}
 .grouphead b{font-size:13px;font-weight:600}
 .grouphead .dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:6px;vertical-align:middle}
 .grouphead small{color:var(--muted);font-size:11px}
 .chips{display:flex;flex-wrap:wrap;gap:7px}
-.chip{font-family:var(--mono);font-size:13px;border:1.5px solid var(--line);background:#fff;
+.chip{font-family:var(--mono);font-size:13px;border:1.5px solid var(--line);background:var(--surface);
       color:var(--ink);border-radius:9px;padding:7px 12px;min-width:40px;text-align:center;
       cursor:pointer;user-select:none;transition:all .13s}
-.chip:hover{border-color:#cfd0cb}
+.chip:hover{border-color:var(--scroll-thumb)}
 .chip.on.b1{background:var(--set-b1);border-color:var(--set-b1);color:#fff}
 .chip.on.b2{background:var(--set-b2);border-color:var(--set-b2);color:#fff}
 .chip.on.s1{background:var(--set-s1);border-color:var(--set-s1);color:#fff}
 .chip.on.s2{background:var(--set-s2);border-color:var(--set-s2);color:#fff}
 .chip.hidden{display:none}
+/* would-be-illegal chip: muted so the conflict is visible up front. Still
+   fully clickable — clicking one evicts whatever's blocking it (see
+   evictBlockers in app.js) rather than refusing the click. Only ever
+   applied to an OFF chip. */
+.chip.disabled{opacity:.4;color:var(--ink-soft)}
 .row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:2px 0 16px}
 .row label{font-size:13px;font-weight:600}
 .switch{position:relative;width:42px;height:24px;flex:0 0 auto;cursor:pointer}
 .switch input{opacity:0;width:0;height:0}
-.track{position:absolute;inset:0;background:#e3e3df;border-radius:999px;transition:.15s}
-.knob{position:absolute;top:3px;left:3px;width:18px;height:18px;background:#fff;border-radius:50%;
+.track{position:absolute;inset:0;background:var(--track-off);border-radius:999px;transition:.15s}
+.knob{position:absolute;top:3px;left:3px;width:18px;height:18px;background:var(--knob);border-radius:50%;
            transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
-.switch input:checked + .track{background:var(--ink)}
+.switch input:checked + .track{background:var(--switch-on)}
 .switch input:checked + .track .knob{left:21px}
 .divider{height:1px;background:var(--line);margin:14px 0}
-.err{background:#fdecec;border:1px solid #f2bcbc;color:#a1201f;border-radius:10px;
+.err{background:var(--err-bg);border:1px solid var(--err-border);color:var(--err-text);border-radius:10px;
      padding:10px 12px;margin:0 0 14px;font-size:12.5px;line-height:1.5}
 
 /* sets */
+.randbtn{display:block;width:100%;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);
+         border-radius:10px;padding:9px 12px;margin:0 0 12px;font-size:13px;font-weight:600;
+         cursor:pointer;transition:.13s}
+.randbtn:hover{border-color:var(--scroll-thumb);background:var(--surface-hover)}
+.randcount{color:var(--muted);font-weight:400;font-size:11.5px}
+.setgroup{margin:0 0 9px}
+.setgroup .setrow{margin:0 0 4px}
+.setwarn{color:var(--err-text);font-size:11px;margin:0 0 5px 36px}
 .setrow{display:flex;align-items:center;gap:10px;margin:0 0 9px}
 .setlab{font-family:var(--mono);font-size:12px;font-weight:700;color:#fff;border-radius:7px;
         padding:4px 8px;flex:0 0 auto;min-width:26px;text-align:center}
@@ -120,16 +184,16 @@ h1{font-size:17px;margin:0 0 2px;letter-spacing:-.01em}
 
 /* transport */
 .transport{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:2px 0 12px}
-.tbtn{width:38px;height:38px;border:1.5px solid var(--line);background:#fff;border-radius:10px;
+.tbtn{width:38px;height:38px;border:1.5px solid var(--line);background:var(--surface);border-radius:10px;
       cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;transition:.13s}
-.tbtn:hover{border-color:#cfd0cb;background:#fafafa}
+.tbtn:hover{border-color:var(--scroll-thumb);background:var(--surface-hover)}
 .tbtn.play{background:var(--ink);border-color:var(--ink);color:#fff}
 /* own row: four 38px buttons already fill the panel width */
 .tempo{flex:1 1 100%;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)}
 .tempo input{flex:1 1 0;min-width:0}
 
 /* current instruction */
-.now{font-family:var(--mono);font-size:13.5px;background:#f7f7f5;border:1px solid var(--line);
+.now{font-family:var(--mono);font-size:13.5px;background:var(--now-bg);border:1px solid var(--line);
      border-radius:10px;padding:11px 12px;margin:0 0 10px;min-height:20px}
 .now .tok{color:var(--muted);margin-right:10px}
 .now.rest{color:var(--muted)}
@@ -147,13 +211,13 @@ h1{font-size:17px;margin:0 0 2px;letter-spacing:-.01em}
 .seqbox{position:relative;flex:1 1 120px;min-height:120px;overflow:auto;border:1px solid var(--line);
         border-radius:10px;background:var(--panel)}
 .seqrow{display:flex;gap:10px;align-items:baseline;padding:6px 11px;font-size:12.5px;
-        border-bottom:1px solid #f1f1ee;cursor:pointer}
+        border-bottom:1px solid var(--seqrow-border);cursor:pointer}
 .seqrow:last-child{border-bottom:0}
-.seqrow:hover{background:#fafafa}
-.seqrow.cur{background:#eef6f5}
+.seqrow:hover{background:var(--seqrow-hover)}
+.seqrow.cur{background:var(--seqrow-cur)}
 .seqrow .i{font-family:var(--mono);color:var(--muted);flex:0 0 22px;text-align:right}
 .seqrow .tok{font-family:var(--mono);flex:0 0 74px}
-.seqrow .lab{color:#3a3d44}
+.seqrow .lab{color:var(--seqrow-lab)}
 .seqrow.cur .tok{color:var(--ink);font-weight:700}
 
 /* section heads */
