@@ -132,10 +132,16 @@ svg.right .entry-label{transform:scaleX(-1)}    /* un-mirror so it stays readabl
 .drawertab{position:fixed;top:20px;z-index:31;width:38px;height:38px;border:1.5px solid var(--line);
            background:var(--surface);color:var(--ink);border-radius:10px;cursor:pointer;
            font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;
-           box-shadow:0 2px 8px rgba(0,0,0,.15);transition:.13s}
+           box-shadow:0 2px 8px rgba(0,0,0,.15);transition:left .22s ease,right .22s ease,border-color .13s,background .13s}
 .drawertab:hover{border-color:var(--scroll-thumb);background:var(--surface-hover)}
 .drawertab.left{left:16px}
 .drawertab.right{right:16px}
+/* open: slide the tab along with its drawer so it lands at the drawer's
+   edge instead of sitting inside the padded content — pinned at a fixed
+   offset it used to land right on top of the description's collapse
+   button. min() mirrors each panel's own max-width:88vw cap. */
+.drawertab.left.open{left:calc(min(360px,88vw) + 16px)}
+.drawertab.right.open{right:calc(min(330px,88vw) + 16px)}
 /* a full-width native scrollbar sits flush against the edge and squares off
    the rounded corner it crosses — slim it down and inset its track instead */
 .panel, .seqbox{scrollbar-width:thin;scrollbar-color:var(--scroll-thumb) transparent}
@@ -190,6 +196,14 @@ h1{font-size:17px;margin:0 0 2px;letter-spacing:-.01em}
          cursor:pointer;transition:.13s}
 .randbtn:hover{border-color:var(--scroll-thumb);background:var(--surface-hover)}
 .randcount{color:var(--muted);font-weight:400;font-size:11.5px}
+.setsio{display:flex;gap:8px;margin:0 0 10px}
+.copybtn{flex:0 0 auto;white-space:nowrap;border:1.5px solid var(--line);background:var(--surface);
+         color:var(--ink);border-radius:10px;padding:9px 12px;font-size:13px;font-weight:600;
+         cursor:pointer;transition:.13s}
+.copybtn:hover{border-color:var(--scroll-thumb);background:var(--surface-hover)}
+.setsinput{flex:1 1 0;min-width:0;font-family:var(--mono);font-size:12.5px;color:var(--ink);
+           background:var(--surface);border:1.5px solid var(--line);border-radius:10px;padding:8px 10px}
+.setsinput:focus{outline:none;border-color:var(--scroll-thumb)}
 .setgroup{margin:0 0 9px}
 .setgroup .setrow{margin:0 0 4px}
 .setwarn{color:var(--err-text);font-size:11px;margin:0 0 5px 36px}
@@ -247,4 +261,6 @@ h1{font-size:17px;margin:0 0 2px;letter-spacing:-.01em}
   .drawertab{width:34px;height:34px;font-size:14px}
   .drawertab.left{left:10px}
   .drawertab.right{right:10px}
+  .drawertab.left.open{left:calc(92vw + 10px)}
+  .drawertab.right.open{right:calc(92vw + 10px)}
 }

@@ -6,6 +6,7 @@
 import {
   ROUTINE, HALF, SET_KEYS, digitOrder, slotsOf, validateRoutine, compile, defaultSets, sanitizeSets,
   hasIllegalOverlap, hasSiblingSubset, subsumes, setsEqual, randomSets, countPossibleCombinations,
+  serializeSets, parseSetsText,
 } from './core.js';
 import { createHand } from './hand.js';
 
@@ -117,9 +118,11 @@ function applyDescCollapsed(){
    slide the panel (open) or itself (close). */
 function applyDrawers(){
   $('seqpanel').classList.toggle('open', seqOpen);
+  $('btnSeqTab').classList.toggle('open', seqOpen);
   $('btnSeqTab').setAttribute('aria-expanded', String(seqOpen));
   $('btnSeqTab').textContent = seqOpen ? '‹' : '›';
   $('panel').classList.toggle('open', panelOpen);
+  $('btnPanelTab').classList.toggle('open', panelOpen);
   $('btnPanelTab').setAttribute('aria-expanded', String(panelOpen));
   $('btnPanelTab').textContent = panelOpen ? '›' : '‹';
 }
@@ -357,6 +360,38 @@ function randomizeSets(){
   recompile(); saveSession();
 }
 
+/* ---- sets as text: copy the current four sets, or paste+Enter a
+   string in the same shape to load them back (round-trips exactly;
+   see serializeSets/parseSetsText in core.js). Bypasses the chip
+   click-time physical/nesting eviction — same as restoring from
+   storage — so a pasted string can land an intentionally "illegal"
+   combo if that's what it says.                                    */
+function copySetsText(){
+  const order = digitOrder(hand.state.thumb);
+  const text = serializeSets(SETS, order);
+  navigator.clipboard?.writeText(text).then(()=>{
+    const btn=$('btnCopySets'), was=btn.textContent;
+    btn.textContent='Copied!';
+    setTimeout(()=>{ btn.textContent=was; }, 1200);
+  }).catch(()=>{ $('setsInput').value=text; $('setsInput').select(); });
+}
+
+function loadSetsFromInput(){
+  const input=$('setsInput');
+  const parsed=parseSetsText(input.value);
+  const missing=SET_KEYS.filter(k=>!(k in parsed));
+  if(missing.length){
+    input.setCustomValidity(`Missing ${missing.join(', ')} — expected e.g. B1:1,2 B2:3 S1:34 S2:12`);
+    input.reportValidity();
+    return;
+  }
+  input.setCustomValidity('');
+  const order = digitOrder(hand.state.thumb);
+  Object.assign(SETS, sanitizeSets(parsed, order));
+  recompile(); saveSession();
+  input.value='';
+}
+
 /* ---- wiring ------------------------------------------------- */
 $('thumbSw').onchange=()=>{
   hand.enableThumb($('thumbSw').checked);
@@ -391,6 +426,13 @@ $('btnDesc').onclick=()=>{ descCollapsed = !descCollapsed; applyDescCollapsed();
 $('btnSeqTab').onclick=()=>{ seqOpen = !seqOpen; applyDrawers(); saveSession(); };
 $('btnPanelTab').onclick=()=>{ panelOpen = !panelOpen; applyDrawers(); saveSession(); };
 $('btnRandom').onclick=randomizeSets;
+$('btnCopySets').onclick=copySetsText;
+$('setsInput').addEventListener('keydown', e=>{
+  if(e.key!=='Enter') return;
+  e.preventDefault();
+  loadSetsFromInput();
+});
+$('setsInput').addEventListener('input', ()=>$('setsInput').setCustomValidity(''));
 $('btnPlay').onclick = playToggle;
 $('btnNext').onclick =()=>{ setPlaying(false); stepBy(1); };
 $('btnPrev').onclick =()=>{ setPlaying(false); stepBy(-1); };

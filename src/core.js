@@ -304,6 +304,29 @@ export function membersOf(sets, key, order){
   return universe.filter(x=>sets[key].has(x));
 }
 
+/* ---- textual sets I/O ---------------------------------------
+   "B1:1,2 B2:3 S1:34 S2:12" — one whitespace-separated KEY:members
+   token per set, comma-separated members, always all four keys (even
+   when a set is empty, e.g. "S2:") so a copy round-trips exactly.   */
+export function serializeSets(sets, order){
+  return SET_KEYS.map(k => `${k}:${membersOf(sets, k, order).join(',')}`).join(' ');
+}
+
+/* Pure text -> {key: [members]} for whichever of B1/B2/S1/S2 tokens are
+   present (case-insensitive, junk tokens ignored) — a key absent from
+   the text is simply absent from the result, so the caller can tell
+   "typed empty" (key:'') from "key missing" before handing the rest to
+   sanitizeSets for validation/clamping against the current digit order. */
+export function parseSetsText(text){
+  const out={};
+  for(const raw of String(text).trim().split(/\s+/)){
+    const m = /^(B1|B2|S1|S2):(.*)$/i.exec(raw);
+    if(!m) continue;
+    out[m[1].toUpperCase()] = m[2].split(',').map(s=>s.trim()).filter(Boolean);
+  }
+  return out;
+}
+
 /* Fold the routine over the sets into an explicit sequence.
 
    The hand state is DERIVED, never mutated: at each step we record which

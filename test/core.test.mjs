@@ -4,7 +4,7 @@ import {
   digitOrder, slotsOf, splayAngles, SPLIT_ANGLE, SET_KEYS,
   parseRoutine, swapHalf, HALF, ROUTINE, tokenOf, validateRoutine,
   compile, membersOf, defaultSets, sanitizeSets, hasIllegalOverlap, hasSiblingSubset, randomSets,
-  countPossibleCombinations,
+  countPossibleCombinations, serializeSets, parseSetsText,
 } from '../src/core.js';
 
 /* A step is "motionless" if the hand's bends/splits are identical to
@@ -194,6 +194,32 @@ test('sanitized sets always compile', () => {
   const out = compile(sets, digitOrder(false));
   assert.equal(out.length, 32);
   assert.deepEqual(out.at(-1).state, {bends:[], splits:[]});
+});
+
+/* ---- sets as text (copy/paste round trip) ------------------- */
+test('serializeSets lists all four keys, even when empty, in screen order', () => {
+  const order=digitOrder(false);
+  const sets={B1:new Set(['2','1']), B2:new Set(), S1:new Set(['34']), S2:new Set()};
+  assert.equal(serializeSets(sets, order), 'B1:1,2 B2: S1:34 S2:');
+});
+
+test('parseSetsText reads whichever keys are present, case-insensitively, and ignores junk', () => {
+  assert.deepEqual(parseSetsText('b1:1,2 B2:3 S1:34 s2:12'),
+    {B1:['1','2'], B2:['3'], S1:['34'], S2:['12']});
+  assert.deepEqual(parseSetsText('B1:1,2 nonsense B2:3'), {B1:['1','2'], B2:['3']});
+  assert.deepEqual(parseSetsText(''), {});
+});
+
+test('a key missing from the text is absent from the result (not an empty array)', () => {
+  const got = parseSetsText('B1:1 B2:3 S1:34');
+  assert.deepEqual(Object.keys(got).sort(), ['B1','B2','S1']);
+});
+
+test('serializeSets -> parseSetsText -> sanitizeSets round-trips defaultSets exactly', () => {
+  const order=digitOrder(false);
+  const original=defaultSets();
+  const restored=sanitizeSets(parseSetsText(serializeSets(original, order)), order);
+  for(const k of SET_KEYS) assert.deepEqual([...restored[k]].sort(), [...original[k]].sort());
 });
 
 /* ---- hard mode: no split while a digit it would move is folded --- */
