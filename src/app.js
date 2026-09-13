@@ -34,7 +34,7 @@ function saveSession(){
       rightHand,
       darkMode,
       loop,
-      continuousRandom,
+      randomizeAtPlay,
       showMap,
       splitBends,
       allowNesting,
@@ -55,15 +55,18 @@ function loadSession(){
   try{
     const d=JSON.parse(raw);
     if(!d || typeof d!=='object') return null;
+    // a field a prior version never wrote (undefined) falls back to `def`;
+    // a field explicitly stored false is a real choice and stays false
+    const boolOr = (v, def) => typeof v==='boolean' ? v : def;
     const thumb=!!d.thumb;
     const rightHand=!!d.rightHand;
     const darkMode=!!d.darkMode;
-    const loop=!!d.loop;
-    const continuousRandom=!!d.continuousRandom;
-    const showMap=!!d.showMap;
+    const loop=boolOr(d.loop, true);
+    const randomizeAtPlay=boolOr(d.randomizeAtPlay, true);
+    const showMap=boolOr(d.showMap, true);
     const splitBends=!!d.splitBends;
     const allowNesting=!!d.allowNesting;
-    const halfSequence=!!d.halfSequence;
+    const halfSequence=boolOr(d.halfSequence, true);
     const descCollapsed=!!d.descCollapsed;
     const seqOpen=!!d.seqOpen;
     const panelOpen=!!d.panelOpen;
@@ -72,7 +75,7 @@ function loadSession(){
       ? sanitizeSets(d.sets, digitOrder(thumb))
       : defaultSets();
     const tempoValue = Number.isFinite(d.tempoValue) ? d.tempoValue : null;
-    return {thumb, rightHand, darkMode, loop, continuousRandom, showMap, splitBends, allowNesting, halfSequence, descCollapsed, seqOpen, panelOpen, sets, tempoValue};
+    return {thumb, rightHand, darkMode, loop, randomizeAtPlay, showMap, splitBends, allowNesting, halfSequence, descCollapsed, seqOpen, panelOpen, sets, tempoValue};
   }catch{ return null; }
 }
 
@@ -86,12 +89,12 @@ const hand = createHand($('hand'), { onStateChange: s => { $('thumbSw').checked 
 
 let rightHand = restored?.rightHand ?? false;
 let darkMode = restored?.darkMode ?? false;
-let loop = restored?.loop ?? false;
-let continuousRandom = restored?.continuousRandom ?? false;
-let showMap = restored?.showMap ?? false;
+let loop = restored?.loop ?? true;
+let randomizeAtPlay = restored?.randomizeAtPlay ?? true;
+let showMap = restored?.showMap ?? true;
 let splitBends = restored?.splitBends ?? false;
 let allowNesting = restored?.allowNesting ?? false;
-let halfSequence = restored?.halfSequence ?? false;
+let halfSequence = restored?.halfSequence ?? true;
 let descCollapsed = restored?.descCollapsed ?? false;
 let seqOpen = restored?.seqOpen ?? false;
 let panelOpen = restored?.panelOpen ?? false;
@@ -164,10 +167,9 @@ function go(i){ p=Math.max(-1, Math.min(COMPILED.length-1, i)); show(); }
 function stepBy(d){ let n=p+d; if(n>=COMPILED.length) n=-1; else if(n<-1) n=COMPILED.length-1; go(n); }
 function tick(){
   if(!playing) return;
-  if(!loop && p>=COMPILED.length-1){   // stop, don't wrap
-    setPlaying(false);
-    if(continuousRandom) crAdvance();
-    return;
+  if(p>=COMPILED.length-1){
+    if(!loop){ setPlaying(false); return; }   // stop, don't wrap
+    if(randomizeAtPlay){ setPlaying(false); crAdvance(); return; }  // loop by re-randomizing
   }
   stepBy(1);
   timer=setTimeout(tick, tempo);
@@ -180,23 +182,23 @@ function setPlaying(on){
   if(on){ if(p>=COMPILED.length-1) p=-1; tick(); }
 }
 
-/* Continuous random's cycle: randomize, pause 2s (so there's time to read
-   the set map even when it's off), then play. Only ever called while not
-   currently playing (see playToggle/tick), so it never races the hand's
-   own playback animation. */
+/* Loop's re-randomize cycle (when "randomize at play" is on): randomize,
+   pause 2s (so there's time to read the set map even when it's off), then
+   play. Only ever called while not currently playing (see playToggle/tick),
+   so it never races the hand's own playback animation. */
 function crAdvance(){
   clearTimeout(crTimer);
   randomizeSets();
   crTimer = setTimeout(()=>setPlaying(true), 2000);
 }
 
-/* A fresh start (from rest, or right after a playthrough ends) runs the
-   continuous-random cycle; resuming a paused mid-sequence playthrough just
-   resumes it, same as always. */
+/* "Randomize at play" fires once, right here, on a fresh start (from rest,
+   or right after a playthrough ends) — resuming a paused mid-sequence
+   playthrough just resumes it, same as always. */
 function playToggle(){
   if(playing){ setPlaying(false); return; }
-  if(continuousRandom && (p<0 || p>=COMPILED.length-1)) crAdvance();
-  else setPlaying(true);
+  if(randomizeAtPlay && (p<0 || p>=COMPILED.length-1)) randomizeSets();
+  setPlaying(true);
 }
 
 function renderSeq(){
@@ -373,13 +375,12 @@ $('darkSw').onchange=()=>{
 };
 $('loopSw').onchange=()=>{
   loop = $('loopSw').checked;
-  if(loop && continuousRandom){ continuousRandom=false; $('crSw').checked=false; clearTimeout(crTimer); }
+  if(!loop) clearTimeout(crTimer);
   saveSession();
 };
 $('crSw').onchange=()=>{
-  continuousRandom = $('crSw').checked;
-  if(continuousRandom && loop){ loop=false; $('loopSw').checked=false; }
-  if(!continuousRandom) clearTimeout(crTimer);
+  randomizeAtPlay = $('crSw').checked;
+  if(!randomizeAtPlay) clearTimeout(crTimer);
   saveSession();
 };
 $('mapSw').onchange=()=>{ showMap = $('mapSw').checked; applyMapVisibility(); saveSession(); };
@@ -429,7 +430,7 @@ $('hand').classList.toggle('right', rightHand);
 $('darkSw').checked = darkMode;
 document.body.classList.toggle('dark', darkMode);
 $('loopSw').checked = loop;
-$('crSw').checked = continuousRandom;
+$('crSw').checked = randomizeAtPlay;
 $('mapSw').checked = showMap;
 $('splitBendsSw').checked = splitBends;
 $('nestedSw').checked = allowNesting;
