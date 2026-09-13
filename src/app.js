@@ -40,6 +40,8 @@ function saveSession(){
       allowNesting,
       halfSequence,
       descCollapsed,
+      seqOpen,
+      panelOpen,
       sets: Object.fromEntries(SET_KEYS.map(k=>[k,[...SETS[k]]])),
       tempoValue: +$('tempo').value,
     }));
@@ -63,12 +65,14 @@ function loadSession(){
     const allowNesting=!!d.allowNesting;
     const halfSequence=!!d.halfSequence;
     const descCollapsed=!!d.descCollapsed;
+    const seqOpen=!!d.seqOpen;
+    const panelOpen=!!d.panelOpen;
     // nothing stored -> defaults; stored-but-empty is a real choice, so keep it
     const sets = (d.sets && typeof d.sets==='object')
       ? sanitizeSets(d.sets, digitOrder(thumb))
       : defaultSets();
     const tempoValue = Number.isFinite(d.tempoValue) ? d.tempoValue : null;
-    return {thumb, rightHand, darkMode, loop, continuousRandom, showMap, splitBends, allowNesting, halfSequence, descCollapsed, sets, tempoValue};
+    return {thumb, rightHand, darkMode, loop, continuousRandom, showMap, splitBends, allowNesting, halfSequence, descCollapsed, seqOpen, panelOpen, sets, tempoValue};
   }catch{ return null; }
 }
 
@@ -89,6 +93,8 @@ let splitBends = restored?.splitBends ?? false;
 let allowNesting = restored?.allowNesting ?? false;
 let halfSequence = restored?.halfSequence ?? false;
 let descCollapsed = restored?.descCollapsed ?? false;
+let seqOpen = restored?.seqOpen ?? false;
+let panelOpen = restored?.panelOpen ?? false;
 let COMPILED=[], p=-1, playing=false, timer=null, crTimer=null, tempo=0;
 
 /* The set map is a static reference overlay — useful while composing sets,
@@ -101,6 +107,18 @@ function applyDescCollapsed(){
   $('sub').classList.toggle('collapsed', descCollapsed);
   $('btnDesc').classList.toggle('collapsed', descCollapsed);
   $('btnDesc').setAttribute('aria-expanded', String(!descCollapsed));
+}
+
+/* Side panels are drawers, closed by default so a phone-width viewport
+   shows only the hand + transport. Each tab's arrow points the way it'll
+   slide the panel (open) or itself (close). */
+function applyDrawers(){
+  $('seqpanel').classList.toggle('open', seqOpen);
+  $('btnSeqTab').setAttribute('aria-expanded', String(seqOpen));
+  $('btnSeqTab').textContent = seqOpen ? '‹' : '›';
+  $('panel').classList.toggle('open', panelOpen);
+  $('btnPanelTab').setAttribute('aria-expanded', String(panelOpen));
+  $('btnPanelTab').textContent = panelOpen ? '›' : '‹';
 }
 
 /* ============================================================
@@ -369,6 +387,8 @@ $('splitBendsSw').onchange=()=>{ splitBends = $('splitBendsSw').checked; syncChi
 $('nestedSw').onchange=()=>{ allowNesting = $('nestedSw').checked; syncChips(); updateRandCount(); saveSession(); };
 $('halfSw').onchange=()=>{ halfSequence = $('halfSw').checked; setPlaying(false); recompile(); saveSession(); };
 $('btnDesc').onclick=()=>{ descCollapsed = !descCollapsed; applyDescCollapsed(); saveSession(); };
+$('btnSeqTab').onclick=()=>{ seqOpen = !seqOpen; applyDrawers(); saveSession(); };
+$('btnPanelTab').onclick=()=>{ panelOpen = !panelOpen; applyDrawers(); saveSession(); };
 $('btnRandom').onclick=randomizeSets;
 $('btnPlay').onclick = playToggle;
 $('btnNext').onclick =()=>{ setPlaying(false); stepBy(1); };
@@ -383,6 +403,12 @@ document.addEventListener('keydown', e=>{
   if(tag==='INPUT' || tag==='SELECT' || tag==='TEXTAREA' || t?.isContentEditable) return;
   e.preventDefault();
   playToggle();
+});
+
+document.addEventListener('keydown', e=>{
+  if(e.key!=='Escape' || (!seqOpen && !panelOpen)) return;
+  seqOpen=false; panelOpen=false;
+  applyDrawers(); saveSession();
 });
 
 /* ---- code-driven use from the console ----------------------- */
@@ -410,6 +436,7 @@ $('nestedSw').checked = allowNesting;
 $('halfSw').checked = halfSequence;
 applyMapVisibility();
 applyDescCollapsed();
+applyDrawers();
 buildSetChips();
 recompile();
 updateRandCount();

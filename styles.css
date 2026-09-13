@@ -115,10 +115,27 @@ svg.right .entry-label{transform:scaleX(-1)}    /* un-mirror so it stays readabl
 
 /* control panel — the controls only; the compiled sequence lives in its
    own column (.seqpanel) so its height isn't limited by how tall the
-   controls happen to be. */
-.panel{flex:0 0 330px;max-width:360px;background:var(--panel);border:1px solid var(--line);
-       border-radius:14px;padding:20px 20px 18px;
-       max-height:calc(100vh - 52px);overflow-y:auto}
+   controls happen to be.
+
+   Both side panels are drawers: fixed overlays pinned to an edge, slid
+   off-screen by default so a closed panel leaves nothing behind but the
+   hand + transport (the part that matters on a phone). They're taken out
+   of the flex flow by position:fixed, so .stage alone fills the row and
+   stays centered regardless of which drawers are open. */
+.panel{position:fixed;top:0;right:0;bottom:0;width:330px;max-width:88vw;z-index:30;
+       background:var(--panel);border-left:1px solid var(--line);border-radius:0;
+       padding:20px 20px 18px;overflow-y:auto;
+       transform:translateX(100%);transition:transform .22s ease;
+       box-shadow:0 0 28px rgba(0,0,0,.18)}
+.panel.open{transform:translateX(0)}
+
+.drawertab{position:fixed;top:20px;z-index:31;width:38px;height:38px;border:1.5px solid var(--line);
+           background:var(--surface);color:var(--ink);border-radius:10px;cursor:pointer;
+           font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;
+           box-shadow:0 2px 8px rgba(0,0,0,.15);transition:.13s}
+.drawertab:hover{border-color:var(--scroll-thumb);background:var(--surface-hover)}
+.drawertab.left{left:16px}
+.drawertab.right{right:16px}
 /* a full-width native scrollbar sits flush against the edge and squares off
    the rounded corner it crosses — slim it down and inset its track instead */
 .panel, .seqbox{scrollbar-width:thin;scrollbar-color:var(--scroll-thumb) transparent}
@@ -193,15 +210,18 @@ h1{font-size:17px;margin:0 0 2px;letter-spacing:-.01em}
 .tempo{flex:1 1 100%;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)}
 .tempo input{flex:1 1 0;min-width:0}
 
-/* sequence panel — its own full-height column, so the list's height is
+/* sequence panel — its own full-height drawer, so the list's height is
    never squeezed by how much room the controls take: on a normal-height
-   screen all 32 steps are visible with no inner scrollbar. min-height:0 on
-   the flex child lets it actually shrink instead of overflowing the page
-   when space is tight. Width is sized to the content (the longest row is
-   "13 -S1&S2 unsplit 34 & split 12"), not stretched to fill leftover space —
-   flex-grow:0 so .stage takes up any extra width instead.               */
-.seqpanel{flex:0 0 360px;max-width:360px;min-width:280px;display:flex;flex-direction:column;
-          max-height:calc(100vh - 52px)}
+   screen all 32 steps are visible with no inner scrollbar. Width is sized
+   to the content (the longest row is "13 -S1&S2 unsplit 34 & split 12"),
+   not stretched to fill leftover space. See .panel above for why this is
+   a fixed-position drawer rather than a flex sibling of .stage.          */
+.seqpanel{position:fixed;top:0;left:0;bottom:0;width:360px;max-width:88vw;z-index:30;
+          background:var(--panel);border-right:1px solid var(--line);
+          display:flex;flex-direction:column;padding:20px 16px 18px 20px;
+          transform:translateX(-100%);transition:transform .22s ease;
+          box-shadow:0 0 28px rgba(0,0,0,.18)}
+.seqpanel.open{transform:translateX(0)}
 .seqpanel .sechead{flex:0 0 auto}
 .seqbox{position:relative;flex:1 1 120px;min-height:120px;overflow:auto;border:1px solid var(--line);
         border-radius:10px;background:var(--panel)}
@@ -219,11 +239,12 @@ h1{font-size:17px;margin:0 0 2px;letter-spacing:-.01em}
 .sechead{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
          color:var(--muted);margin:0 0 9px}
 
-/* narrow/short screens: a full-height column doesn't help when there's no
-   room to spare, so fall back to a page that scrolls as a whole. */
-@media (max-width:820px), (max-height:640px){
-  body{align-items:flex-start}
-  .panel{max-height:none;overflow-y:visible}
-  .seqpanel{max-height:none}
-  .seqbox{flex:0 0 auto;max-height:320px}
+/* narrow screens: the drawers are already full-height overlays, so there's
+   nothing to reflow here — just let them (and their tabs) shrink to fit
+   rather than overshoot the viewport width. */
+@media (max-width:420px){
+  .seqpanel, .panel{width:92vw}
+  .drawertab{width:34px;height:34px;font-size:14px}
+  .drawertab.left{left:10px}
+  .drawertab.right{right:10px}
 }
