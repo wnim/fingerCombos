@@ -12,7 +12,7 @@
    the renderer scales them to whatever band it has.              */
 export const DIGIT_TABLE = {
   //  id : { kind, len, w }
-  T : { kind:'thumb',  len:132, w:34 },
+  T : { kind:'thumb',  len:165, w:46 },
   1 : { kind:'finger', len:150, w:36 },
   2 : { kind:'finger', len:180, w:38 },
   3 : { kind:'finger', len:162, w:37 },
@@ -104,13 +104,22 @@ export function validateRoutine(steps){
 }
 
 /* Physical constraint (off when "Split bends" is on): a slot can't be
-   split while either of its bordering digits is folded — you can't spread
-   a bent finger away from its neighbor. Takes a step's derived
-   {bends, splits} (arrays, as produced by compile()) and reports whether
-   any split slot has a bent border. */
-export function hasIllegalOverlap(bends, splits){
+   split while a digit it would actually move away from its neighbor is
+   folded. An EDGE slot (the first or last in the hand's slot list) only
+   moves its outermost digit when it opens — e.g. slot "12" only cares
+   about digit 1, not digit 2; slot "34" only cares about digit 4. Every
+   other (interior) slot pulls both of its bordering digits apart, so
+   either one being bent blocks it. Takes a step's derived {bends, splits}
+   (arrays, as produced by compile()) plus the hand's full ordered slot
+   list (slotsOf(order)) so edge slots can be told from interior ones. */
+export function hasIllegalOverlap(bends, splits, slots){
   const bent = new Set(bends);
-  return splits.some(slot => bent.has(slot[0]) || bent.has(slot.slice(1)));
+  return splits.some(slot => {
+    const i = slots.indexOf(slot);
+    const edge = slots.length>1 && (i===0 || i===slots.length-1);
+    if(!edge) return bent.has(slot[0]) || bent.has(slot.slice(1));
+    return i===0 ? bent.has(slot[0]) : bent.has(slot.slice(1));
+  });
 }
 
 export const subsumes = (a,b) => a.size>0 && [...a].every(x=>b.has(x));
@@ -186,14 +195,17 @@ function randomQuadruple(order, slots, rng){
    countPossibleCombinations which must check every candidate). */
 function isLegalQuadruple(sets, order, legalPhysical, allowNesting){
   if(!allowNesting && hasSiblingSubset(sets)) return false;
-  if(legalPhysical && compile(sets, order).some(c=>hasIllegalOverlap(c.state.bends, c.state.splits))) return false;
+  if(legalPhysical){
+    const slots = slotsOf(order);
+    if(compile(sets, order).some(c=>hasIllegalOverlap(c.state.bends, c.state.splits, slots))) return false;
+  }
   return true;
 }
 
-/* Worst-case acceptance ratio across every toggle combination is ~206:1
+/* Worst-case acceptance ratio across every toggle combination is ~76:1
    (thumb on, legalPhysical=true, allowNesting=false: 216,225 candidates
-   vs 1,048 legal — see countPossibleCombinations). A cap of 5000 makes
-   the failure probability (1-1/206)^5000 ≈ 2.6e-11 — negligible even
+   vs 2,882 legal — see countPossibleCombinations). A cap of 5000 makes
+   the failure probability (1-1/76)^5000 ≈ 3.7e-29 — negligible even
    summed across a whole test run — while costing microseconds even in
    the unlucky tail, since each attempt is just one compile() call. */
 const MAX_RANDOM_TRIES = 5000;
@@ -221,9 +233,11 @@ export function randomSets(order, legalPhysical, allowNesting = false, rng = Mat
 export function countPossibleCombinations(order, legalPhysical, allowNesting){
   const slots = slotsOf(order);
   const n = order.length, m = slots.length;
-  const borderMask = slots.map(s => {
+  const borderMask = slots.map((s, j) => {
     const i1 = order.indexOf(s[0]), i2 = order.indexOf(s.slice(1));
-    return (1<<i1) | (1<<i2);
+    const edge = slots.length>1 && (j===0 || j===slots.length-1);
+    if(!edge) return (1<<i1) | (1<<i2);
+    return j===0 ? (1<<i1) : (1<<i2);
   });
 
   const active = {B1:false,B2:false,S1:false,S2:false};

@@ -196,22 +196,26 @@ test('sanitized sets always compile', () => {
   assert.deepEqual(out.at(-1).state, {bends:[], splits:[]});
 });
 
-/* ---- hard mode: no split while a bordering digit is folded --- */
-test('a split slot with a bent border is illegal', () => {
-  assert.equal(hasIllegalOverlap(['1','2'], ['12']), true);
-  assert.equal(hasIllegalOverlap(['4'], ['34']), true);
-  assert.equal(hasIllegalOverlap(['2'], ['23']), true);
-  assert.equal(hasIllegalOverlap(['3'], ['23']), true);
+/* ---- hard mode: no split while a digit it would move is folded --- */
+test('a split slot with a bent digit it would move is illegal', () => {
+  const slots = ['12','23','34'];
+  assert.equal(hasIllegalOverlap(['1'], ['12'], slots), true);   // edge slot: only its outer digit (1) matters
+  assert.equal(hasIllegalOverlap(['4'], ['34'], slots), true);   // edge slot: only its outer digit (4) matters
+  assert.equal(hasIllegalOverlap(['2'], ['23'], slots), true);   // interior slot: either border matters
+  assert.equal(hasIllegalOverlap(['3'], ['23'], slots), true);
 });
 
-test('a split slot with no bent border is legal', () => {
-  assert.equal(hasIllegalOverlap([], ['12','23','34']), false);
-  assert.equal(hasIllegalOverlap(['1','4'], ['23']), false);
+test('a split slot with no bent digit it would move is legal', () => {
+  const slots = ['12','23','34'];
+  assert.equal(hasIllegalOverlap([], ['12','23','34'], slots), false);
+  assert.equal(hasIllegalOverlap(['1','4'], ['23'], slots), false);
+  assert.equal(hasIllegalOverlap(['2'], ['12'], slots), false);   // edge slot: inner border (2) doesn't block it
+  assert.equal(hasIllegalOverlap(['3'], ['34'], slots), false);   // edge slot: inner border (3) doesn't block it
 });
 
 test('the default sets never produce an illegal overlap', () => {
   const order = digitOrder(false);
-  const bad = compile(defaultSets(), order).some(c => hasIllegalOverlap(c.state.bends, c.state.splits));
+  const bad = compile(defaultSets(), order).some(c => hasIllegalOverlap(c.state.bends, c.state.splits, slotsOf(order)));
   assert.equal(bad, false);
 });
 
@@ -290,7 +294,7 @@ test('legal randomization never produces an illegal overlap, across many seeds a
     const order = digitOrder(thumb);
     for(let seed=0; seed<50; seed++){
       const sets = randomSets(order, true, false, mulberry32(seed));
-      const bad = compile(sets, order).some(c => hasIllegalOverlap(c.state.bends, c.state.splits));
+      const bad = compile(sets, order).some(c => hasIllegalOverlap(c.state.bends, c.state.splits, slotsOf(order)));
       assert.equal(bad, false, `seed ${seed} thumb=${thumb}`);
     }
   }
@@ -324,7 +328,7 @@ test('hard-mode randomization (legalPhysical=false) can still produce an illegal
   let sawIllegal = false;
   for(let seed=0; seed<200 && !sawIllegal; seed++){
     const sets = randomSets(order, false, false, mulberry32(seed));
-    sawIllegal = compile(sets, order).some(c => hasIllegalOverlap(c.state.bends, c.state.splits));
+    sawIllegal = compile(sets, order).some(c => hasIllegalOverlap(c.state.bends, c.state.splits, slotsOf(order)));
   }
   assert.equal(sawIllegal, true);
 });
@@ -374,7 +378,7 @@ function bruteForceCount(order, legalPhysical, allowNesting){
     for(const S1 of sSubsets) for(const S2 of sSubsets){
       const sets={B1,B2,S1,S2};
       if(!allowNesting && hasSiblingSubset(sets)) continue;
-      if(legalPhysical && compile(sets, order).some(c=>hasIllegalOverlap(c.state.bends, c.state.splits))) continue;
+      if(legalPhysical && compile(sets, order).some(c=>hasIllegalOverlap(c.state.bends, c.state.splits, slots))) continue;
       count++;
     }
   }
@@ -417,7 +421,7 @@ function bruteForceLegalKeys(order, legalPhysical, allowNesting, keyOf){
     for(const S1 of sSubsets) for(const S2 of sSubsets){
       const sets={B1,B2,S1,S2};
       if(!allowNesting && hasSiblingSubset(sets)) continue;
-      if(legalPhysical && compile(sets, order).some(c=>hasIllegalOverlap(c.state.bends, c.state.splits))) continue;
+      if(legalPhysical && compile(sets, order).some(c=>hasIllegalOverlap(c.state.bends, c.state.splits, slots))) continue;
       keys.add(keyOf(sets));
     }
   }
@@ -428,7 +432,7 @@ function bruteForceLegalKeys(order, legalPhysical, allowNesting, keyOf){
    countPossibleCombinations counts. Prove it statistically: over many
    draws from one continuous seeded stream, every legal quadruple should
    turn up, and none should turn up wildly more or less often than any
-   other. Uses the strictest no-thumb case (64 legal quadruples) because
+   other. Uses the strictest no-thumb case (240 legal quadruples) because
    that's where the old fill()-based generator's B1-first/reserve-for-
    sibling asymmetry was most pronounced — a biased generator fails this
    decisively (some quadruples never appear, or appear many times more
@@ -439,9 +443,9 @@ test('randomSets samples uniformly over the exact legal quadruple space', () => 
   const keyOf = sets => SET_KEYS.map(k => membersOf(sets, k, order).join('.')).join('|');
 
   const legalKeys = bruteForceLegalKeys(order, legalPhysical, allowNesting, keyOf);
-  assert.equal(legalKeys.size, 64);   // sanity check against countPossibleCombinations
+  assert.equal(legalKeys.size, 240);   // sanity check against countPossibleCombinations
 
-  const N = 1500;                     // ~23.4 expected hits per of 64 bins
+  const N = 6000;                     // 25 expected hits per of 240 bins
   const rng = mulberry32(20260101);   // one continuous stream, not reseeded per draw
   const tally = new Map([...legalKeys].map(k => [k, 0]));
   for(let i=0; i<N; i++){

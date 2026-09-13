@@ -4,7 +4,7 @@
    the puppet.
    ============================================================ */
 import {
-  ROUTINE, SET_KEYS, digitOrder, slotsOf, validateRoutine, compile, defaultSets, sanitizeSets,
+  ROUTINE, HALF, SET_KEYS, digitOrder, slotsOf, validateRoutine, compile, defaultSets, sanitizeSets,
   hasIllegalOverlap, hasSiblingSubset, subsumes, setsEqual, randomSets, countPossibleCombinations,
 } from './core.js';
 import { createHand } from './hand.js';
@@ -34,9 +34,11 @@ function saveSession(){
       rightHand,
       darkMode,
       loop,
+      continuousRandom,
       showMap,
       splitBends,
       allowNesting,
+      halfSequence,
       descCollapsed,
       sets: Object.fromEntries(SET_KEYS.map(k=>[k,[...SETS[k]]])),
       tempoValue: +$('tempo').value,
@@ -55,16 +57,18 @@ function loadSession(){
     const rightHand=!!d.rightHand;
     const darkMode=!!d.darkMode;
     const loop=!!d.loop;
+    const continuousRandom=!!d.continuousRandom;
     const showMap=!!d.showMap;
     const splitBends=!!d.splitBends;
     const allowNesting=!!d.allowNesting;
+    const halfSequence=!!d.halfSequence;
     const descCollapsed=!!d.descCollapsed;
     // nothing stored -> defaults; stored-but-empty is a real choice, so keep it
     const sets = (d.sets && typeof d.sets==='object')
       ? sanitizeSets(d.sets, digitOrder(thumb))
       : defaultSets();
     const tempoValue = Number.isFinite(d.tempoValue) ? d.tempoValue : null;
-    return {thumb, rightHand, darkMode, loop, showMap, splitBends, allowNesting, descCollapsed, sets, tempoValue};
+    return {thumb, rightHand, darkMode, loop, continuousRandom, showMap, splitBends, allowNesting, halfSequence, descCollapsed, sets, tempoValue};
   }catch{ return null; }
 }
 
@@ -79,11 +83,13 @@ const hand = createHand($('hand'), { onStateChange: s => { $('thumbSw').checked 
 let rightHand = restored?.rightHand ?? false;
 let darkMode = restored?.darkMode ?? false;
 let loop = restored?.loop ?? false;
+let continuousRandom = restored?.continuousRandom ?? false;
 let showMap = restored?.showMap ?? false;
 let splitBends = restored?.splitBends ?? false;
 let allowNesting = restored?.allowNesting ?? false;
+let halfSequence = restored?.halfSequence ?? false;
 let descCollapsed = restored?.descCollapsed ?? false;
-let COMPILED=[], p=-1, playing=false, timer=null, tempo=0;
+let COMPILED=[], p=-1, playing=false, timer=null, crTimer=null, tempo=0;
 
 /* The set map is a static reference overlay — useful while composing sets,
    noise while the hand is actually moving. So its DOM visibility tracks
@@ -100,7 +106,7 @@ function applyDescCollapsed(){
 /* ============================================================
    PLAYER
    ============================================================ */
-const seqbox=$('seqbox'), nowEl=$('now');
+const seqbox=$('seqbox');
 
 const stateAt = i =>
   i<0 ? {thumb:hand.state.thumb, bends:[], splits:[]}
@@ -108,6 +114,7 @@ const stateAt = i =>
 
 function recompile(){
   COMPILED = compile(SETS, digitOrder(hand.state.thumb));
+  if(halfSequence) COMPILED = COMPILED.slice(0, HALF.length);
   hand.setMap(SETS);
   renderSeq();
   if(p>COMPILED.length-1) p=COMPILED.length-1;
@@ -119,12 +126,8 @@ function show(){
   hand.setState(stateAt(p));
   [...seqbox.children].forEach((r,i)=>r.classList.toggle('cur', i===p));
   if(p>=0){
-    const c=COMPILED[p];
-    nowEl.classList.remove('rest');
-    nowEl.innerHTML=`<span class="tok">${p+1}. ${c.token}</span>${c.label}`;
     revealRow(p);
   } else {
-    nowEl.classList.add('rest'); nowEl.textContent='— ready —';
     seqbox.scrollTop=0;                       // back at the top, ready for step 1
   }
 }
@@ -143,15 +146,39 @@ function go(i){ p=Math.max(-1, Math.min(COMPILED.length-1, i)); show(); }
 function stepBy(d){ let n=p+d; if(n>=COMPILED.length) n=-1; else if(n<-1) n=COMPILED.length-1; go(n); }
 function tick(){
   if(!playing) return;
-  if(!loop && p>=COMPILED.length-1){ setPlaying(false); return; }   // stop, don't wrap
+  if(!loop && p>=COMPILED.length-1){   // stop, don't wrap
+    setPlaying(false);
+    if(continuousRandom) crAdvance();
+    return;
+  }
   stepBy(1);
   timer=setTimeout(tick, tempo);
 }
 function setPlaying(on){
   playing=on; clearTimeout(timer);
+  if(!on) clearTimeout(crTimer);
   $('btnPlay').textContent = on?'⏸':'▶';
   applyMapVisibility();
   if(on){ if(p>=COMPILED.length-1) p=-1; tick(); }
+}
+
+/* Continuous random's cycle: randomize, pause 2s (so there's time to read
+   the set map even when it's off), then play. Only ever called while not
+   currently playing (see playToggle/tick), so it never races the hand's
+   own playback animation. */
+function crAdvance(){
+  clearTimeout(crTimer);
+  randomizeSets();
+  crTimer = setTimeout(()=>setPlaying(true), 2000);
+}
+
+/* A fresh start (from rest, or right after a playthrough ends) runs the
+   continuous-random cycle; resuming a paused mid-sequence playthrough just
+   resumes it, same as always. */
+function playToggle(){
+  if(playing){ setPlaying(false); return; }
+  if(continuousRandom && (p<0 || p>=COMPILED.length-1)) crAdvance();
+  else setPlaying(true);
 }
 
 function renderSeq(){
@@ -171,14 +198,15 @@ function readTempo(){ tempo = TEMPO_SPAN - (+$('tempo').value); }
 
 /* ---- set-membership chips ---------------------------------- */
 
-/* "Split bends" off: a slot can't be split while either bordering digit is
+/* "Split bends" off: a slot can't be split while a digit it would move is
    folded (hasIllegalOverlap). Test the WHOLE hypothetical sets against
    the compiled routine — not just the edited set in isolation — since an
    overlap can come from any pair of currently-active sets at any step. */
 function violatesPhysical(testSets){
   if(splitBends) return false;
   const order=digitOrder(hand.state.thumb);
-  return compile(testSets, order).some(c=>hasIllegalOverlap(c.state.bends, c.state.splits));
+  const slots=slotsOf(order);
+  return compile(testSets, order).some(c=>hasIllegalOverlap(c.state.bends, c.state.splits, slots));
 }
 
 /* "Nested sets" off: neither of B1/B2 (or S1/S2) may be a full subset of
@@ -325,17 +353,37 @@ $('darkSw').onchange=()=>{
   document.body.classList.toggle('dark', darkMode);
   saveSession();
 };
-$('loopSw').onchange=()=>{ loop = $('loopSw').checked; saveSession(); };
+$('loopSw').onchange=()=>{
+  loop = $('loopSw').checked;
+  if(loop && continuousRandom){ continuousRandom=false; $('crSw').checked=false; clearTimeout(crTimer); }
+  saveSession();
+};
+$('crSw').onchange=()=>{
+  continuousRandom = $('crSw').checked;
+  if(continuousRandom && loop){ loop=false; $('loopSw').checked=false; }
+  if(!continuousRandom) clearTimeout(crTimer);
+  saveSession();
+};
 $('mapSw').onchange=()=>{ showMap = $('mapSw').checked; applyMapVisibility(); saveSession(); };
 $('splitBendsSw').onchange=()=>{ splitBends = $('splitBendsSw').checked; syncChips(); updateRandCount(); saveSession(); };
 $('nestedSw').onchange=()=>{ allowNesting = $('nestedSw').checked; syncChips(); updateRandCount(); saveSession(); };
+$('halfSw').onchange=()=>{ halfSequence = $('halfSw').checked; setPlaying(false); recompile(); saveSession(); };
 $('btnDesc').onclick=()=>{ descCollapsed = !descCollapsed; applyDescCollapsed(); saveSession(); };
 $('btnRandom').onclick=randomizeSets;
-$('btnPlay').onclick =()=>setPlaying(!playing);
+$('btnPlay').onclick = playToggle;
 $('btnNext').onclick =()=>{ setPlaying(false); stepBy(1); };
 $('btnPrev').onclick =()=>{ setPlaying(false); stepBy(-1); };
 $('btnReset').onclick=()=>{ setPlaying(false); go(-1); };
 $('tempo').oninput   = ()=>{ readTempo(); saveSession(); };
+
+document.addEventListener('keydown', e=>{
+  if(e.code!=='Space' && e.key!==' ') return;
+  const t = e.target;
+  const tag = t?.tagName;
+  if(tag==='INPUT' || tag==='SELECT' || tag==='TEXTAREA' || t?.isContentEditable) return;
+  e.preventDefault();
+  playToggle();
+});
 
 /* ---- code-driven use from the console ----------------------- */
 window.hand = hand;
@@ -355,9 +403,11 @@ $('hand').classList.toggle('right', rightHand);
 $('darkSw').checked = darkMode;
 document.body.classList.toggle('dark', darkMode);
 $('loopSw').checked = loop;
+$('crSw').checked = continuousRandom;
 $('mapSw').checked = showMap;
 $('splitBendsSw').checked = splitBends;
 $('nestedSw').checked = allowNesting;
+$('halfSw').checked = halfSequence;
 applyMapVisibility();
 applyDescCollapsed();
 buildSetChips();

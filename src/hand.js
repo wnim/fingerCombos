@@ -9,7 +9,9 @@ import { DIGIT_TABLE, digitOrder, slotsOf, splayAngles } from './core.js';
    (anatomy lives in core's DIGIT_TABLE)                          */
 const KY = 220;                 // knuckle line (finger bases sit here)
 const FX0 = 131, FX1 = 329;     // finger band = full palm width across the knuckle line
-const THUMB_BASE = {x:120, y:396}, THUMB_REST = -55;  // side anchor + rest angle
+const THUMB_BASE = {x:145, y:404}, THUMB_REST = 0;  // pivot sits INSIDE the palm's edge, not on it, so the thumb's base overlaps over the hand like a real thumb does, instead of butting up against a seam.
+                                                     // rest=0: the traced shape's own points already encode its natural upright lean — no extra rotation on top
+const THUMB_BOX = {left:-67, right:0, top:-166, bottom:0};   // the traced silhouette's own bounds, relative to THUMB_BASE — used by the set-map box, which can't share the fingers' tip-to-knuckle-line formula
 const EASE = 0.22;              // per-frame lerp toward target
 
 /* Layout: each digit gets a base point, a rest angle and a width.
@@ -25,7 +27,9 @@ export function layout(order){
   fingers.forEach((id,i)=>{
     map[id]={ base:{x:FX0+span*(i+0.5), y:KY}, rest:0, w:Math.round(DIGIT_TABLE[id].w*scale) };
   });
-  if(order.includes('T')) map['T']={ base:{...THUMB_BASE}, rest:THUMB_REST, w:DIGIT_TABLE['T'].w };
+  // the thumb's own base/rest never depend on `order` — it's drawn even
+  // when disabled (just inert), so its layout entry is unconditional.
+  map['T']={ base:{...THUMB_BASE}, rest:THUMB_REST, w:DIGIT_TABLE['T'].w };
   return map;
 }
 
@@ -36,6 +40,24 @@ function rrect(x,y,w,h,rt,rb){           // vertical rounded rect (rt=top radius
   const x1=x+w;
   return `M${x} ${y+rt} Q${x} ${y} ${x+rt} ${y} L${x1-rt} ${y} Q${x1} ${y} ${x1} ${y+rt}`
        + ` L${x1} ${y+h-rb} Q${x1} ${y+h} ${x1-rb} ${y+h} L${x+rb} ${y+h} Q${x} ${y+h} ${x} ${y+h-rb} Z`;
+}
+/* Closed polygon with every corner filleted by radius r — a freehand
+   silhouette (straight edges traced from a reference drawing) still needs
+   its joints softened the way every other shape in this file is. r is
+   clamped per-corner to half its shorter adjacent edge so short edges
+   (like the thumbnail facet) don't overshoot into a bowtie. */
+function roundedPoly(pts, r){
+  const n=pts.length;
+  let d='';
+  for(let i=0;i<n;i++){
+    const prev=pts[(i-1+n)%n], cur=pts[i], next=pts[(i+1)%n];
+    const d1=Math.hypot(cur.x-prev.x, cur.y-prev.y), d2=Math.hypot(next.x-cur.x, next.y-cur.y);
+    const rr=Math.min(r, d1/2, d2/2);
+    const p1={x:cur.x+(prev.x-cur.x)/d1*rr, y:cur.y+(prev.y-cur.y)/d1*rr};
+    const p2={x:cur.x+(next.x-cur.x)/d2*rr, y:cur.y+(next.y-cur.y)/d2*rr};
+    d += (i===0 ? `M${p1.x} ${p1.y} ` : `L${p1.x} ${p1.y} `) + `Q${cur.x} ${cur.y} ${p2.x} ${p2.y} `;
+  }
+  return d+'Z';
 }
 
 /**
@@ -65,7 +87,7 @@ export function createHand(svg, {onStateChange}={}){
     // palm
     svg.appendChild(el('path',{class:'palm', d:
       'M126 236 Q120 224 132 222 L328 222 Q340 224 334 238 '+
-      'L330 452 Q328 486 300 488 L156 488 Q130 486 128 456 Z'}));
+      'L330 402 Q328 436 300 438 L156 438 Q130 436 128 406 Z'}));
 
     // gap markers — an annotation layer, appended LAST so the digits
     // can't occlude the chevrons or the slot label.
@@ -109,35 +131,67 @@ export function createHand(svg, {onStateChange}={}){
       mapLayer.appendChild(sm); SLOTMAP[slot]={s1,s2};
     });
 
-    // digits
-    order.forEach(id=>{
-      const cfg=DIGIT_TABLE[id], b=lay[id].base;
+    // digits — the thumb draws even when disabled (just inert/greyed, see
+    // `.digit.inactive`): it isn't part of any slot or set then, but hiding
+    // it entirely reads as a missing digit rather than an optional one.
+    const renderOrder = digitOrder(true);
+    renderOrder.forEach(id=>{
+      const cfg=DIGIT_TABLE[id], b=lay[id].base, isThumb=cfg.kind==='thumb';
       const w=lay[id].w, L=cfg.len, x=b.x-w/2;
-      const g=el('g',{class:'digit','data-id':id});
+      const inactive = isThumb && !enableThumb;
+      const g=el('g',{class:'digit'+(inactive?' inactive':''),'data-id':id});
 
-      /* --- EXTENDED: straight finger, three phalanges ----------------- */
-      const proxLen=Math.round(L*0.42), midLen=Math.round(L*0.33), distLen=L-proxLen-midLen;
-      const pip=b.y-proxLen, dip=pip-midLen, tipY=b.y-L;
       const ext=el('g',{class:'extended'});
-      ext.appendChild(el('path',{class:'seg', d:rrect(x, pip, w, proxLen, 8, 4)}));      // proximal
-      ext.appendChild(el('path',{class:'seg', d:rrect(x, dip, w, midLen, 6, 3)}));       // middle
-      ext.appendChild(el('path',{class:'seg', d:rrect(x, tipY, w, distLen, w/2, 4)}));   // distal (tip)
-      ext.appendChild(el('path',{class:'knuckle', d:`M${x+4} ${pip} h${w-8}`}));         // PIP crease
-      ext.appendChild(el('path',{class:'knuckle', d:`M${x+4} ${dip} h${w-8}`}));         // DIP crease
-      g.appendChild(ext);
-
-      /* --- BENT: PIP fold. Proximal stays straight; middle + distal curl
-         down over the front of it, nail at the very tip. ---------------- */
       const bent=el('g',{class:'bent', opacity:0});
-      const bProx=Math.round(L*0.42), bPip=b.y-bProx;
-      bent.appendChild(el('path',{class:'seg', d:rrect(x, bPip, w, bProx, 8, 4)}));
-      const fW=w-4, fX=b.x-fW/2, foldLen=Math.round(bProx*0.9), fTop=bPip-4, fBot=fTop+foldLen;
-      bent.appendChild(el('path',{class:'seg', d:rrect(fX, fTop, fW, foldLen, 6, Math.round(fW*0.5))}));
-      bent.appendChild(el('path',{class:'knuckle', d:`M${fX+3} ${fTop+3} h${fW-6}`}));                        // PIP hinge
-      bent.appendChild(el('path',{class:'knuckle', d:`M${fX+3} ${fTop+Math.round(foldLen*0.52)} h${fW-6}`})); // DIP
-      const nW=Math.round(fW*0.62), nH=Math.round(foldLen*0.42), nY=fBot-nH-3;
-      bent.appendChild(el('path',{class:'nail', d:rrect(b.x-nW/2, nY, nW, nH, Math.round(nW*0.28), Math.round(nW*0.5))}));
-      bent.appendChild(el('path',{class:'cuticle', d:`M${b.x-nW/2+2} ${nY+4} Q${b.x} ${nY-4} ${b.x+nW/2-2} ${nY+4}`}));
+      if(isThumb){
+        /* --- A THUMB, traced from an actual reference drawing (a rough
+           draft, straight edges only) rather than derived from a formula.
+           `b` (the base point) is the pivot AND a corner of the shape
+           (the CMC joint), sitting at the palm's own corner, so the whole
+           thing fans out to one side of it instead of straddling it
+           symmetrically like a finger does. Corners get filleted (see
+           roundedPoly) so the traced angles read as a drawn hand, not a
+           polygon. Points are offsets from the pivot, up = -y. --------- */
+        const pt=(dx,dy)=>({x:b.x+dx, y:b.y+dy});
+
+        const eB=pt(-41,-40), eD=pt(-47,-126), eE=pt(-67,-154), eG=pt(-53,-166), eI=pt(-10,-146), eK=pt(-6,-71);
+        ext.appendChild(el('path',{class:'seg', d:roundedPoly([b, eB, eD, eE, eG, eI, eK], 10)}));
+        // nail facet, nested right at the tip's direction-change corner
+        const nM=pt(-63,-153), nN=pt(-53,-153), nP=pt(-41,-140), nQ=pt(-52,-132);
+        ext.appendChild(el('path',{class:'nail', d:roundedPoly([nM, nN, nP, nQ], 3)}));
+
+        /* --- BENT: the proximal edge (pivot→B→D) folds much sooner than
+           in the extended pose, and instead of continuing up, the tip
+           doubles back over to the side — the way it visibly does when
+           you actually curl a thumb in — ending in a small loop with the
+           nail facet inside it. -------------------------------------- */
+        const fD=pt(-42,-98), fE=pt(-33,-109), fF=pt(11,-112), fG=pt(19,-102), fH=pt(2,-88), fI=pt(-20,-92);
+        bent.appendChild(el('path',{class:'seg', d:roundedPoly([b, eB, fD, fE, fF, fG, fH, fI], 10)}));
+        const bM=pt(-9,-100), bN=pt(-13,-109), bL=pt(7,-101);
+        bent.appendChild(el('path',{class:'nail', d:roundedPoly([fF, bL, bM, bN], 3)}));
+      } else {
+        /* --- EXTENDED: straight finger, three phalanges ----------------- */
+        const proxLen=Math.round(L*0.42), midLen=Math.round(L*0.33), distLen=L-proxLen-midLen;
+        const pip=b.y-proxLen, dip=pip-midLen, tipY=b.y-L;
+        ext.appendChild(el('path',{class:'seg', d:rrect(x, pip, w, proxLen, 8, 4)}));      // proximal
+        ext.appendChild(el('path',{class:'seg', d:rrect(x, dip, w, midLen, 6, 3)}));       // middle
+        ext.appendChild(el('path',{class:'seg', d:rrect(x, tipY, w, distLen, w/2, 4)}));   // distal (tip)
+        ext.appendChild(el('path',{class:'knuckle', d:`M${x+4} ${pip} h${w-8}`}));         // PIP crease
+        ext.appendChild(el('path',{class:'knuckle', d:`M${x+4} ${dip} h${w-8}`}));         // DIP crease
+
+        /* --- BENT: PIP fold. Proximal stays straight; middle + distal curl
+           down over the front of it, nail at the very tip. ---------------- */
+        const bProx=Math.round(L*0.42), bPip=b.y-bProx;
+        bent.appendChild(el('path',{class:'seg', d:rrect(x, bPip, w, bProx, 8, 4)}));
+        const fW=w-4, fX=b.x-fW/2, foldLen=Math.round(bProx*0.9), fTop=bPip-4, fBot=fTop+foldLen;
+        bent.appendChild(el('path',{class:'seg', d:rrect(fX, fTop, fW, foldLen, 6, Math.round(fW*0.5))}));
+        bent.appendChild(el('path',{class:'knuckle', d:`M${fX+3} ${fTop+3} h${fW-6}`}));                        // PIP hinge
+        bent.appendChild(el('path',{class:'knuckle', d:`M${fX+3} ${fTop+Math.round(foldLen*0.52)} h${fW-6}`})); // DIP
+        const nW=Math.round(fW*0.62), nH=Math.round(foldLen*0.42), nY=fBot-nH-3;
+        bent.appendChild(el('path',{class:'nail', d:rrect(b.x-nW/2, nY, nW, nH, Math.round(nW*0.28), Math.round(nW*0.5))}));
+        bent.appendChild(el('path',{class:'cuticle', d:`M${b.x-nW/2+2} ${nY+4} Q${b.x} ${nY-4} ${b.x+nW/2-2} ${nY+4}`}));
+      }
+      g.appendChild(ext);
       g.appendChild(bent);
 
       svg.appendChild(g);
@@ -156,13 +210,18 @@ export function createHand(svg, {onStateChange}={}){
 
   /* Group a set's members into maximal runs of ADJACENT order-positions, so
      a non-contiguous set (e.g. {1,3} with 2 left out) draws two separate
-     boxes instead of one box that wrongly swallows the finger in between. */
+     boxes instead of one box that wrongly swallows the finger in between.
+     The thumb never joins a run even when order-adjacent to a finger — it
+     sits at a totally different position/orientation on the palm, so a box
+     spanning both would be meaningless (and the geometry below can't even
+     express it: the thumb's box uses its own traced bounds, not the
+     tip-to-knuckle-line formula the fingers share). */
   function runsOf(members){
     const idxs = order.map((id,i)=>({id,i})).filter(o=>members.has(o.id));
     const runs=[];
     idxs.forEach(({id,i})=>{
       const cur=runs[runs.length-1];
-      if(cur && i===cur.last+1){ cur.ids.push(id); cur.last=i; }
+      if(cur && i===cur.last+1 && id!=='T' && cur.ids[cur.ids.length-1]!=='T'){ cur.ids.push(id); cur.last=i; }
       else runs.push({ids:[id], last:i});
     });
     return runs.map(r=>r.ids);
@@ -190,13 +249,21 @@ export function createHand(svg, {onStateChange}={}){
     const padBot = key==='B1' ? 10 : 26;
     const labelText = ENTRY_TEXT[key];
     runsOf(members).forEach(ids=>{
-      let left=Infinity, right=-Infinity, top=Infinity;
-      ids.forEach(id=>{
-        const b=lay[id].base, w=lay[id].w, tip=b.y-DIGIT_TABLE[id].len;
-        left=Math.min(left, b.x-w/2); right=Math.max(right, b.x+w/2);
-        top=Math.min(top, tip);
-      });
-      const x=left-padX, y=top-padTop, w=(right-left)+padX*2, h=(KY+padBot)-y;
+      let x, y, w, h;
+      if(ids.length===1 && ids[0]==='T'){
+        // the thumb: own bounds (THUMB_BOX), not the finger tip-to-knuckle-line formula
+        const b=lay.T.base;
+        x=b.x+THUMB_BOX.left-padX; y=b.y+THUMB_BOX.top-padTop;
+        w=(THUMB_BOX.right-THUMB_BOX.left)+padX*2; h=(THUMB_BOX.bottom-THUMB_BOX.top)+padTop+padBot;
+      } else {
+        let left=Infinity, right=-Infinity, top=Infinity;
+        ids.forEach(id=>{
+          const b=lay[id].base, dw=lay[id].w, tip=b.y-DIGIT_TABLE[id].len;
+          left=Math.min(left, b.x-dw/2); right=Math.max(right, b.x+dw/2);
+          top=Math.min(top, tip);
+        });
+        x=left-padX; y=top-padTop; w=(right-left)+padX*2; h=(KY+padBot)-y;
+      }
       container.appendChild(el('rect',{class:'setbox-rect '+key.toLowerCase(), x, y, width:w, height:h, rx:12}));
       if(labelText){
         const label=el('text',{class:'setbox-label '+key.toLowerCase(), x:x+w/2, y:y-7});
