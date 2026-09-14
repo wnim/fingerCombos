@@ -521,6 +521,17 @@ document.addEventListener('keydown', e=>{
   applyDrawers(); saveSession();
 });
 
+document.addEventListener('keydown', e=>{
+  if(e.key!=='r' && e.key!=='R') return;
+  const t = e.target;
+  const tag = t?.tagName;
+  const type = t?.type;
+  const isTextualInput = tag==='INPUT' && type!=='checkbox' && type!=='radio' && type!=='button' && type!=='submit' && type!=='range';
+  if(isTextualInput || tag==='SELECT' || tag==='TEXTAREA' || t?.isContentEditable) return;
+  e.preventDefault();
+  setPlaying(false); go(-1);
+});
+
 /* ---- code-driven use from the console ----------------------- */
 window.hand = hand;
 window.routine = {

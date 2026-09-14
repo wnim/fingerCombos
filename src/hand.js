@@ -317,7 +317,8 @@ export function createHand(svg, {onStateChange}={}){
       d.target.theta = lay[id].rest + splay[id];
       d.target.bend  = state.bends.has(id) ? 1 : 0;
     });
-    Object.entries(GAPS).forEach(([slot,g])=> g.classList.toggle('on', state.splits.has(slot)));
+    // momentarily disabled: live split chevron/label — just show the fingers move
+    // Object.entries(GAPS).forEach(([slot,g])=> g.classList.toggle('on', state.splits.has(slot)));
     animate();
     onStateChange?.(api.state);
   }

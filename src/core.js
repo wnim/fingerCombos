@@ -50,6 +50,15 @@ export function splayAngles(order, splits){
   const anchor = m%2 ? s[(m-1)/2] : (s[m/2-1]+s[m/2])/2;   // median = least total motion
   const out={};
   order.forEach((id,i)=>{ out[id]=(cum[i]-anchor)*SPLIT_ANGLE; });
+  /* The thumb sits off the fingers' axis, not colinear with them, so it
+     doesn't share their "least total motion" pool: since it's always the
+     chain's leftmost link its own cum is always 0, meaning the shared
+     anchor above — which the FINGERS legitimately need to rebalance among
+     themselves — would otherwise swing the thumb too, by however much
+     splits *elsewhere* (T1 uninvolved) happen to shift that anchor. The
+     thumb's angle should depend only on its own slot. */
+  const thumbId = order.find(id=>DIGIT_TABLE[id].kind==='thumb');
+  if(thumbId) out[thumbId] = open.has(slotsOf(order)[0]) ? -SPLIT_ANGLE : 0;
   return out;
 }
 
