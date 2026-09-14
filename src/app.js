@@ -99,7 +99,7 @@ let halfSequence = restored?.halfSequence ?? true;
 let descCollapsed = restored?.descCollapsed ?? false;
 let seqOpen = restored?.seqOpen ?? false;
 let panelOpen = restored?.panelOpen ?? false;
-let COMPILED=[], p=-1, playing=false, timer=null, crTimer=null, tempo=0;
+let COMPILED=[], p=-1, playing=false, timer=null, loopTimer=null, tempo=0;
 
 /* The set map is a static reference overlay — useful while composing sets,
    noise while the hand is actually moving. So its DOM visibility tracks
@@ -172,27 +172,28 @@ function tick(){
   if(!playing) return;
   if(p>=COMPILED.length-1){
     if(!loop){ setPlaying(false); return; }   // stop, don't wrap
-    if(randomizeAtPlay){ setPlaying(false); crAdvance(); return; }  // loop by re-randomizing
+    setPlaying(false); loopAdvance(); return;  // loop: pause on the set map, then wrap
   }
   stepBy(1);
   timer=setTimeout(tick, tempo);
 }
 function setPlaying(on){
   playing=on; clearTimeout(timer);
-  if(!on) clearTimeout(crTimer);
+  if(!on) clearTimeout(loopTimer);
   $('btnPlay').textContent = on?'⏸':'▶';
   applyMapVisibility();
   if(on){ if(p>=COMPILED.length-1) p=-1; tick(); }
 }
 
-/* Loop's re-randomize cycle (when "randomize at play" is on): randomize,
-   pause 2s (so there's time to read the set map even when it's off), then
-   play. Only ever called while not currently playing (see playToggle/tick),
-   so it never races the hand's own playback animation. */
-function crAdvance(){
-  clearTimeout(crTimer);
-  randomizeSets();
-  crTimer = setTimeout(()=>setPlaying(true), 2000);
+/* End of a loop pass: pause 2s on the set map — reading it needs the
+   pause whether or not the sets just changed — randomizing first when
+   "Randomize at play" is on. Only ever called while not currently
+   playing (see tick), so it never races the hand's own playback
+   animation. */
+function loopAdvance(){
+  clearTimeout(loopTimer);
+  if(randomizeAtPlay) randomizeSets();
+  loopTimer = setTimeout(()=>setPlaying(true), 2000);
 }
 
 /* "Randomize at play" fires once, right here, on a fresh start (from rest,
@@ -410,12 +411,11 @@ $('darkSw').onchange=()=>{
 };
 $('loopSw').onchange=()=>{
   loop = $('loopSw').checked;
-  if(!loop) clearTimeout(crTimer);
+  if(!loop) clearTimeout(loopTimer);
   saveSession();
 };
 $('crSw').onchange=()=>{
   randomizeAtPlay = $('crSw').checked;
-  if(!randomizeAtPlay) clearTimeout(crTimer);
   saveSession();
 };
 $('mapSw').onchange=()=>{ showMap = $('mapSw').checked; applyMapVisibility(); saveSession(); };
@@ -443,7 +443,9 @@ document.addEventListener('keydown', e=>{
   if(e.code!=='Space' && e.key!==' ') return;
   const t = e.target;
   const tag = t?.tagName;
-  if(tag==='INPUT' || tag==='SELECT' || tag==='TEXTAREA' || t?.isContentEditable) return;
+  const type = t?.type;
+  const isTextualInput = tag==='INPUT' && type!=='checkbox' && type!=='radio' && type!=='button' && type!=='submit' && type!=='range';
+  if(isTextualInput || tag==='SELECT' || tag==='TEXTAREA' || t?.isContentEditable) return;
   e.preventDefault();
   playToggle();
 });
