@@ -84,12 +84,13 @@ export function createHand(svg, {onStateChange}={}){
     lay=layout(order);
     DIGITS={}; GAPS={}; BOXES={}; SLOTMAP={}; ENTRYLABEL=null;
 
-    // palm — bottom edge sits at THUMB_BASE.y (404) so the thumb's own
-    // base/silhouette bottom lands flush with the palm's bottom, instead
-    // of floating above it.
+    // palm — same width as the finger band (FX0..FX1) so its sides line
+    // up with the outer fingers instead of bulging past them. Bottom
+    // edge sits at THUMB_BASE.y (404) so the thumb's own base/silhouette
+    // bottom lands flush with the palm's bottom, instead of floating
+    // above it.
     svg.appendChild(el('path',{class:'palm', d:
-      'M126 236 Q120 224 132 222 L328 222 Q340 224 334 238 '+
-      'L330 368 Q328 402 300 404 L156 404 Q130 402 128 372 Z'}));
+      rrect(FX0, 222, FX1-FX0, THUMB_BASE.y-222, 10, 30)}));
 
     // gap markers — an annotation layer, appended LAST so the digits
     // can't occlude the chevrons or the slot label.
