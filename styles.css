@@ -65,8 +65,8 @@ body{background:var(--bg);color:var(--ink);font-family:var(--font);
      display:flex;gap:28px;padding:26px;flex-wrap:wrap;align-items:stretch;
      min-height:100vh;transition:background .15s,color .15s}
 .stage{flex:1 1 300px;min-width:260px;display:flex;flex-direction:column;
-       justify-content:center;align-items:center;gap:14px}
-.stagetitle{font-size:19px;font-weight:700;letter-spacing:-.01em;margin:0}
+       justify-content:flex-start;align-items:center;gap:14px}
+.stagetitle{font-size:30px;font-weight:700;letter-spacing:-.01em;margin:0 0 -8px}
 svg{width:100%;max-width:520px;height:auto;display:block;transition:transform .15s}
 svg.right{transform:scaleX(-1)}    /* mirror the whole hand for a right-hand view */
 
