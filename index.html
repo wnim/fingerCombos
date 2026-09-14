@@ -5,9 +5,12 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="styles.css">
 
-<button class="drawertab left" id="btnSeqTab" type="button" aria-expanded="false" aria-controls="seqpanel" title="Show/hide sequence">›</button>
+<button class="drawertab left" id="btnSeqTab" type="button" aria-expanded="false" aria-controls="seqpanel" title="Show sequence">›</button>
 <div class="seqpanel" id="seqpanel">
-  <h2 class="sechead">Sequence</h2>
+  <div class="panelhead">
+    <h2 class="sechead">Sequence</h2>
+    <button class="closebtn" id="btnSeqClose" type="button" aria-label="Close sequence panel" title="Close"></button>
+  </div>
   <div class="seqbox" id="seqbox"></div>
 </div>
 
@@ -17,17 +20,20 @@
   <div class="transport">
     <button class="tbtn" id="btnReset" title="Reset to start">⟲</button>
     <button class="tbtn" id="btnPrev" title="Previous">◀</button>
-    <button class="tbtn play" id="btnPlay" title="Play/pause">▶</button>
+    <button class="tbtn play" id="btnPlay" title="Play/pause"></button>
     <button class="tbtn" id="btnNext" title="Next">▶▏</button>
     <span class="tempo">slow<input type="range" id="tempo" min="180" max="1200" step="20" value="640">fast</span>
   </div>
 </div>
 
-<button class="drawertab right" id="btnPanelTab" type="button" aria-expanded="false" aria-controls="panel" title="Show/hide controls">‹</button>
+<button class="drawertab right" id="btnPanelTab" type="button" aria-expanded="false" aria-controls="panel" title="Show controls">‹</button>
 <div class="panel" id="panel">
   <div class="titlerow">
     <h1>Finger Fitness routine</h1>
-    <button class="descbtn" id="btnDesc" aria-expanded="true" aria-controls="sub" title="Show/hide description">▾</button>
+    <div class="titleactions">
+      <button class="descbtn" id="btnDesc" aria-expanded="true" aria-controls="sub" title="Show/hide description">▾</button>
+      <button class="closebtn" id="btnPanelClose" type="button" aria-label="Close controls panel" title="Close"></button>
+    </div>
   </div>
   <p class="sub" id="sub">Put fingers in the bend sets (B1/B2) and slots in the split sets (S1/S2).
     The holy sequence compiles into an explicit, per-finger routine and plays it on the
@@ -107,6 +113,7 @@
       <div class="setwarn" id="S2warn" hidden>S2 is empty — pick at least one slot</div>
     </div>
   </div>
+  <p class="hint">Shift+click a finger or slot to blacklist it — excluded from Randomize sets.</p>
 </div>
 
 <script type="module" src="src/app.js"></script>

@@ -44,9 +44,25 @@ function saveSession(){
       seqOpen,
       panelOpen,
       sets: Object.fromEntries(SET_KEYS.map(k=>[k,[...SETS[k]]])),
+      blacklist: {
+        left: { B:[...BLACKLIST.left.B], S:[...BLACKLIST.left.S] },
+        right: { B:[...BLACKLIST.right.B], S:[...BLACKLIST.right.S] },
+      },
       tempoValue: +$('tempo').value,
     }));
   }catch{ /* storage unavailable — the app still works, just forgets */ }
+}
+
+/* Blacklist is stored/restored per hand side (see BLACKLIST below) and,
+   like SETS, needs re-validating against the current digit order — a
+   stale or corrupt entry just drops rather than crashing. */
+function sanitizeBlacklistSide(raw, order){
+  const validB=new Set(order), validS=new Set(slotsOf(order));
+  const list = v => Array.isArray(v) ? v : v instanceof Set ? [...v] : [];
+  return {
+    B: new Set(list(raw?.B).map(String).filter(x=>validB.has(x))),
+    S: new Set(list(raw?.S).map(String).filter(x=>validS.has(x))),
+  };
 }
 
 function loadSession(){
@@ -75,8 +91,13 @@ function loadSession(){
     const sets = (d.sets && typeof d.sets==='object')
       ? sanitizeSets(d.sets, digitOrder(thumb))
       : defaultSets();
+    const order = digitOrder(thumb);
+    const blacklist = {
+      left: sanitizeBlacklistSide(d.blacklist?.left, order),
+      right: sanitizeBlacklistSide(d.blacklist?.right, order),
+    };
     const tempoValue = Number.isFinite(d.tempoValue) ? d.tempoValue : null;
-    return {thumb, rightHand, darkMode, loop, randomizeAtPlay, showMap, splitBends, allowNesting, halfSequence, descCollapsed, seqOpen, panelOpen, sets, tempoValue};
+    return {thumb, rightHand, darkMode, loop, randomizeAtPlay, showMap, splitBends, allowNesting, halfSequence, descCollapsed, seqOpen, panelOpen, sets, blacklist, tempoValue};
   }catch{ return null; }
 }
 
@@ -85,10 +106,17 @@ function loadSession(){
    ============================================================ */
 const restored = loadSession();
 const SETS = restored?.sets ?? defaultSets();
+/* Blacklisted fingers/slots, kept separately per hand side (see the
+   "Right hand" switch) — switching sides swaps which blacklist is live,
+   as if each hand remembers its own. A finger blacklisted on B applies to
+   both B1 and B2 (they share the same finger universe); same for S1/S2
+   and slots. */
+const BLACKLIST = restored?.blacklist ?? { left:{B:new Set(), S:new Set()}, right:{B:new Set(), S:new Set()} };
 
 const hand = createHand($('hand'), { onStateChange: s => { $('thumbSw').checked = s.thumb; } });
 
 let rightHand = restored?.rightHand ?? false;
+const blacklistSide = () => BLACKLIST[rightHand ? 'right' : 'left'];
 let darkMode = restored?.darkMode ?? false;
 let loop = restored?.loop ?? true;
 let randomizeAtPlay = restored?.randomizeAtPlay ?? true;
@@ -114,17 +142,18 @@ function applyDescCollapsed(){
 }
 
 /* Side panels are drawers, closed by default so a phone-width viewport
-   shows only the hand + transport. Each tab's arrow points the way it'll
-   slide the panel (open) or itself (close). */
+   shows only the hand + transport. Each edge tab only ever opens its
+   panel — it hides itself once open (see .drawertab.open in CSS) so it
+   never has to travel across the screen and collide with the other
+   drawer's tab. Closing happens from a ✕ button inside the panel's own
+   header instead, which by construction can't overlap anything else. */
 function applyDrawers(){
   $('seqpanel').classList.toggle('open', seqOpen);
   $('btnSeqTab').classList.toggle('open', seqOpen);
   $('btnSeqTab').setAttribute('aria-expanded', String(seqOpen));
-  $('btnSeqTab').textContent = seqOpen ? '‹' : '›';
   $('panel').classList.toggle('open', panelOpen);
   $('btnPanelTab').classList.toggle('open', panelOpen);
   $('btnPanelTab').setAttribute('aria-expanded', String(panelOpen));
-  $('btnPanelTab').textContent = panelOpen ? '›' : '‹';
 }
 
 /* ============================================================
@@ -177,10 +206,21 @@ function tick(){
   stepBy(1);
   timer=setTimeout(tick, tempo);
 }
+/* Plain '▶'/'⏸' text glyphs render as full-color emoji on some mobile
+   browsers (font-dependent, ugly and inconsistent) — SVG paints the same
+   everywhere. Injected from JS rather than written into index.html: some
+   dev-reload servers naively insert their livereload <script> before
+   every </svg> they find in the raw HTML, and having several inline
+   <svg> blocks in the static markup made one such server duplicate that
+   injection and truncate the page. Kept out of the static HTML, that
+   class of tool never sees an </svg> to match. */
+const ICON_PLAY = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 2l10 6-10 6z" fill="currentColor"/></svg>';
+const ICON_PAUSE = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="3" y="2" width="4" height="12" fill="currentColor"/><rect x="9" y="2" width="4" height="12" fill="currentColor"/></svg>';
+const ICON_CLOSE = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>';
 function setPlaying(on){
   playing=on; clearTimeout(timer);
   if(!on) clearTimeout(loopTimer);
-  $('btnPlay').textContent = on?'⏸':'▶';
+  $('btnPlay').innerHTML = on ? ICON_PAUSE : ICON_PLAY;
   applyMapVisibility();
   if(on){ if(p>=COMPILED.length-1) p=-1; tick(); }
 }
@@ -300,7 +340,23 @@ function buildSetChips(){
     universe.forEach(id=>{
       const c=document.createElement('div');
       c.className='chip '+cls+(SETS[key].has(id)?' on':''); c.textContent=id; c.dataset.id=id;
-      c.onclick=()=>{
+      c.onclick=(e)=>{
+        const bl = key[0]==='B' ? blacklistSide().B : blacklistSide().S;
+        if(e.shiftKey){
+          if(bl.has(id)){
+            bl.delete(id);
+          } else {
+            bl.add(id);
+            // a blacklisted move can't stay selected in either sibling set
+            for(const k of SET_KEYS) if(k[0]===key[0]) SETS[k].delete(id);
+          }
+          recompile(); updateRandCount(); saveSession();
+          return;
+        }
+        if(bl.has(id)){
+          c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake');
+          return;
+        }
         const turningOn = !SETS[key].has(id);
         if(turningOn){
           const testSet=new Set(SETS[key]); testSet.add(id);
@@ -323,18 +379,22 @@ function buildSetChips(){
    Also flags any set that's gone empty (see index.html's .setwarn rows). */
 function syncChips(){
   for(const key of SET_KEYS){
+    const bl = key[0]==='B' ? blacklistSide().B : blacklistSide().S;
     [...$(key).children].forEach(c=>{
-      const id=c.dataset.id, isOn=SETS[key].has(id);
+      const id=c.dataset.id, isOn=SETS[key].has(id), isBlack=bl.has(id);
       c.classList.toggle('on', isOn);
+      c.classList.toggle('blacklisted', isBlack);
       let title='';
-      if(!isOn){
+      if(isBlack){
+        title='Blacklisted — shift+click to re-enable it';
+      } else if(!isOn){
         const testSets={...SETS, [key]:new Set(SETS[key]).add(id)};
         if(violatesPhysical(testSets))
           title="Would split a folded finger — click to force it (frees the finger/slot blocking it), or enable Split bends";
         else if(violatesNesting(testSets))
           title="Would make one set fully cover the other, so nothing would move — click to force it, or enable Nested sets";
       }
-      c.classList.toggle('disabled', !!title);
+      c.classList.toggle('disabled', !!title && !isBlack);
       c.title = title;
     });
     const warn=$(key+'warn'); if(warn) warn.hidden = SETS[key].size>0;
@@ -347,7 +407,7 @@ function syncChips(){
    chosen), so it's recomputed on those changes rather than every click. */
 function updateRandCount(){
   const order = digitOrder(hand.state.thumb);
-  const n = countPossibleCombinations(order, !splitBends, allowNesting);
+  const n = countPossibleCombinations(order, !splitBends, allowNesting, blacklistSide());
   $('randCount').textContent = `(${n.toLocaleString()} combinations)`;
 }
 
@@ -356,7 +416,7 @@ function updateRandCount(){
    is a no-op — both filters are enforced inside randomSets itself. */
 function randomizeSets(){
   const order = digitOrder(hand.state.thumb);
-  const next = randomSets(order, !splitBends, allowNesting);
+  const next = randomSets(order, !splitBends, allowNesting, Math.random, blacklistSide());
   for(const key of SET_KEYS) SETS[key] = next[key];
   recompile(); saveSession();
 }
@@ -396,13 +456,16 @@ function loadSetsFromInput(){
 /* ---- wiring ------------------------------------------------- */
 $('thumbSw').onchange=()=>{
   hand.enableThumb($('thumbSw').checked);
-  Object.assign(SETS, sanitizeSets(SETS, digitOrder(hand.state.thumb)));
+  const order = digitOrder(hand.state.thumb);
+  Object.assign(SETS, sanitizeSets(SETS, order));
+  BLACKLIST.left = sanitizeBlacklistSide(BLACKLIST.left, order);
+  BLACKLIST.right = sanitizeBlacklistSide(BLACKLIST.right, order);
   buildSetChips(); recompile(); updateRandCount(); saveSession();
 };
 $('handSw').onchange=()=>{
   rightHand = $('handSw').checked;
   $('hand').classList.toggle('right', rightHand);
-  saveSession();
+  syncChips(); updateRandCount(); saveSession();
 };
 $('darkSw').onchange=()=>{
   darkMode = $('darkSw').checked;
@@ -423,8 +486,10 @@ $('splitBendsSw').onchange=()=>{ splitBends = $('splitBendsSw').checked; syncChi
 $('nestedSw').onchange=()=>{ allowNesting = $('nestedSw').checked; syncChips(); updateRandCount(); saveSession(); };
 $('halfSw').onchange=()=>{ halfSequence = $('halfSw').checked; setPlaying(false); recompile(); saveSession(); };
 $('btnDesc').onclick=()=>{ descCollapsed = !descCollapsed; applyDescCollapsed(); saveSession(); };
-$('btnSeqTab').onclick=()=>{ seqOpen = !seqOpen; applyDrawers(); saveSession(); };
-$('btnPanelTab').onclick=()=>{ panelOpen = !panelOpen; applyDrawers(); saveSession(); };
+$('btnSeqTab').onclick=()=>{ seqOpen = true; applyDrawers(); saveSession(); };
+$('btnSeqClose').onclick=()=>{ seqOpen = false; applyDrawers(); saveSession(); };
+$('btnPanelTab').onclick=()=>{ panelOpen = true; applyDrawers(); saveSession(); };
+$('btnPanelClose').onclick=()=>{ panelOpen = false; applyDrawers(); saveSession(); };
 $('btnRandom').onclick=randomizeSets;
 $('btnCopySets').onclick=copySetsText;
 $('setsInput').addEventListener('keydown', e=>{
@@ -465,6 +530,9 @@ window.routine = {
 };
 
 /* ---------- boot -------------------------------------------- */
+$('btnPlay').innerHTML = ICON_PLAY;
+$('btnSeqClose').innerHTML = ICON_CLOSE;
+$('btnPanelClose').innerHTML = ICON_CLOSE;
 if(restored?.tempoValue!=null) $('tempo').value = restored.tempoValue;
 readTempo();
 if(restored?.thumb) hand.enableThumb(true);

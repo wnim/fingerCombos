@@ -132,16 +132,16 @@ svg.right .entry-label{transform:scaleX(-1)}    /* un-mirror so it stays readabl
 .drawertab{position:fixed;top:20px;z-index:31;width:38px;height:38px;border:1.5px solid var(--line);
            background:var(--surface);color:var(--ink);border-radius:10px;cursor:pointer;
            font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;
-           box-shadow:0 2px 8px rgba(0,0,0,.15);transition:left .22s ease,right .22s ease,border-color .13s,background .13s}
+           box-shadow:0 2px 8px rgba(0,0,0,.15);transition:border-color .13s,background .13s}
 .drawertab:hover{border-color:var(--scroll-thumb);background:var(--surface-hover)}
 .drawertab.left{left:16px}
 .drawertab.right{right:16px}
-/* open: slide the tab along with its drawer so it lands at the drawer's
-   edge instead of sitting inside the padded content — pinned at a fixed
-   offset it used to land right on top of the description's collapse
-   button. min() mirrors each panel's own max-width:88vw cap. */
-.drawertab.left.open{left:calc(min(360px,88vw) + 16px)}
-.drawertab.right.open{right:calc(min(330px,88vw) + 16px)}
+/* Each tab only opens its own panel and never moves — it hides itself
+   once open (closing instead happens from a ✕ inside the panel's own
+   header, see .panelhead/.titleactions) so an open tab can never travel
+   across the screen and end up sitting on top of the OTHER drawer's tab,
+   which is what happened when this used to slide to the drawer's edge. */
+.drawertab.open{display:none}
 /* a full-width native scrollbar sits flush against the edge and squares off
    the rounded corner it crosses — slim it down and inset its track instead */
 .panel, .seqbox{scrollbar-width:thin;scrollbar-color:var(--scroll-thumb) transparent}
@@ -151,10 +151,21 @@ svg.right .entry-label{transform:scaleX(-1)}    /* un-mirror so it stays readabl
 .panel::-webkit-scrollbar-thumb:hover, .seqbox::-webkit-scrollbar-thumb:hover{background:var(--scroll-thumb-hover);background-clip:padding-box}
 .titlerow{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
 h1{font-size:17px;margin:0 0 2px;letter-spacing:-.01em}
+.titleactions{display:flex;align-items:center;gap:4px;flex:0 0 auto}
 .descbtn{border:0;background:none;color:var(--muted);cursor:pointer;font-size:13px;
          line-height:1;padding:4px;flex:0 0 auto;transition:transform .15s}
 .descbtn:hover{color:var(--ink)}
 .descbtn.collapsed{transform:rotate(-90deg)}
+/* explicit in-panel close control — always in the panel's own header, so
+   unlike the edge tabs it can never end up overlapping another drawer's
+   controls. Only ever visible because the whole panel is (see .panel.open
+   / .seqpanel.open), so it needs no open/closed state of its own. */
+.panelhead{display:flex;align-items:center;justify-content:space-between;margin:0 0 9px}
+.panelhead .sechead{margin:0}
+.closebtn{border:1.5px solid var(--line);background:var(--surface);color:var(--muted);
+          width:26px;height:26px;border-radius:8px;cursor:pointer;flex:0 0 auto;padding:0;
+          display:flex;align-items:center;justify-content:center;transition:.13s}
+.closebtn:hover{border-color:var(--scroll-thumb);background:var(--surface-hover);color:var(--ink)}
 .sub{color:var(--muted);font-size:12.5px;margin:0 0 16px;line-height:1.5}
 .sub.collapsed{display:none}
 .group{margin:0 0 16px}
@@ -177,6 +188,18 @@ h1{font-size:17px;margin:0 0 2px;letter-spacing:-.01em}
    evictBlockers in app.js) rather than refusing the click. Only ever
    applied to an OFF chip. */
 .chip.disabled{opacity:.4;color:var(--ink-soft)}
+/* blacklisted (shift+click): excluded from Randomize sets and can't be
+   turned on at all — a plain click just shakes it (see .chip.shake). */
+.chip.blacklisted{background:#000;border-color:#000;color:#8a8a8a;
+                   text-decoration:line-through;cursor:not-allowed}
+.chip.blacklisted:hover{border-color:#000}
+@keyframes chipshake{
+  10%,90%{transform:translateX(-1px)}
+  20%,80%{transform:translateX(2px)}
+  30%,50%,70%{transform:translateX(-4px)}
+  40%,60%{transform:translateX(4px)}
+}
+.chip.shake{animation:chipshake .4s}
 .row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:2px 0 16px}
 .row label{font-size:13px;font-weight:600}
 .switch{position:relative;width:42px;height:24px;flex:0 0 auto;cursor:pointer}
@@ -213,6 +236,7 @@ h1{font-size:17px;margin:0 0 2px;letter-spacing:-.01em}
 .setlab.b1{background:var(--set-b1)} .setlab.b2{background:var(--set-b2)}
 .setlab.s1{background:var(--set-s1)} .setlab.s2{background:var(--set-s2)}
 .setrow .chips{flex:1}
+.hint{color:var(--muted);font-size:11px;margin:8px 0 0}
 
 /* transport */
 .transport{width:100%;max-width:400px;display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:2px 0 0}
@@ -236,7 +260,7 @@ h1{font-size:17px;margin:0 0 2px;letter-spacing:-.01em}
           transform:translateX(-100%);transition:transform .22s ease;
           box-shadow:0 0 28px rgba(0,0,0,.18)}
 .seqpanel.open{transform:translateX(0)}
-.seqpanel .sechead{flex:0 0 auto}
+.seqpanel .panelhead{flex:0 0 auto}
 .seqbox{position:relative;flex:1 1 120px;min-height:120px;overflow:auto;border:1px solid var(--line);
         border-radius:10px;background:var(--panel)}
 .seqrow{display:flex;gap:10px;align-items:baseline;padding:6px 11px;font-size:12.5px;
@@ -261,6 +285,4 @@ h1{font-size:17px;margin:0 0 2px;letter-spacing:-.01em}
   .drawertab{width:34px;height:34px;font-size:14px}
   .drawertab.left{left:10px}
   .drawertab.right{right:10px}
-  .drawertab.left.open{left:calc(92vw + 10px)}
-  .drawertab.right.open{right:calc(92vw + 10px)}
 }

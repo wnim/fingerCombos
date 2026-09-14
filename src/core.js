@@ -179,13 +179,24 @@ function randomNonEmptySubset(universe, rng){
 }
 
 /* One fully independent draw of all four sets — kept as its own function
-   so a rejection can redraw all of them atomically (see randomSets). */
-function randomQuadruple(order, slots, rng){
+   so a rejection can redraw all of them atomically (see randomSets).
+
+   `blacklist` (optional {B:Set, S:Set}) removes specific fingers/slots
+   from the draw pool entirely — a blacklisted member can never appear in
+   B1/B2 (or S1/S2), while the rest of the pool stays uniform (dropping
+   members from a uniform-subset draw doesn't bias the survivors, it just
+   shrinks the space they're drawn from). Falls back to the full pool if
+   the blacklist would empty it, rather than drawing from nothing. */
+function randomQuadruple(order, slots, rng, blacklist){
+  const bPool = blacklist?.B?.size ? order.filter(id=>!blacklist.B.has(id)) : order;
+  const sPool = blacklist?.S?.size ? slots.filter(id=>!blacklist.S.has(id)) : slots;
+  const bUniverse = bPool.length ? bPool : order;
+  const sUniverse = sPool.length ? sPool : slots;
   return {
-    B1: randomNonEmptySubset(order, rng),
-    B2: randomNonEmptySubset(order, rng),
-    S1: randomNonEmptySubset(slots, rng),
-    S2: randomNonEmptySubset(slots, rng),
+    B1: randomNonEmptySubset(bUniverse, rng),
+    B2: randomNonEmptySubset(bUniverse, rng),
+    S1: randomNonEmptySubset(sUniverse, rng),
+    S2: randomNonEmptySubset(sUniverse, rng),
   };
 }
 
@@ -210,13 +221,13 @@ function isLegalQuadruple(sets, order, legalPhysical, allowNesting){
    the unlucky tail, since each attempt is just one compile() call. */
 const MAX_RANDOM_TRIES = 5000;
 
-export function randomSets(order, legalPhysical, allowNesting = false, rng = Math.random){
+export function randomSets(order, legalPhysical, allowNesting = false, rng = Math.random, blacklist = null){
   const slots = slotsOf(order);
   for(let i=0;i<MAX_RANDOM_TRIES;i++){
-    const candidate = randomQuadruple(order, slots, rng);
+    const candidate = randomQuadruple(order, slots, rng, blacklist);
     if(isLegalQuadruple(candidate, order, legalPhysical, allowNesting)) return candidate;
   }
-  return randomQuadruple(order, slots, rng);   // ~2.6e-11 chance; see MAX_RANDOM_TRIES above
+  return randomQuadruple(order, slots, rng, blacklist);   // ~2.6e-11 chance; see MAX_RANDOM_TRIES above
 }
 
 /* Exact size of the pool randomSets draws from: every non-empty
@@ -230,7 +241,7 @@ export function randomSets(order, legalPhysical, allowNesting = false, rng = Mat
    or their union — depending on which of the pair is active at that
    step (fixed by ROUTINE, independent of set contents), which is what
    the bitmask OR-in-if pattern below is exploiting.               */
-export function countPossibleCombinations(order, legalPhysical, allowNesting){
+export function countPossibleCombinations(order, legalPhysical, allowNesting, blacklist = null){
   const slots = slotsOf(order);
   const n = order.length, m = slots.length;
   const borderMask = slots.map((s, j) => {
@@ -247,13 +258,23 @@ export function countPossibleCombinations(order, legalPhysical, allowNesting){
     steps.push({b1:active.B1, b2:active.B2, s1:active.S1, s2:active.S2});
   }
 
+  // A blacklisted finger/slot can never appear in ANY set that draws from
+  // its universe (both B1&B2, or both S1&S2) — encoded once as a bitmask
+  // so every candidate carrying a blacklisted bit is skipped up front.
+  const blackB = blacklist ? order.reduce((mask,id,i)=>blacklist.B?.has(id)?mask|(1<<i):mask, 0) : 0;
+  const blackS = blacklist ? slots.reduce((mask,id,i)=>blacklist.S?.has(id)?mask|(1<<i):mask, 0) : 0;
+
   const maxB=(1<<n)-1, maxS=(1<<m)-1;
   let count=0;
   for(let B1=1; B1<=maxB; B1++){
+    if(B1 & blackB) continue;
     for(let B2=1; B2<=maxB; B2++){
+      if(B2 & blackB) continue;
       if(!allowNesting && ((B1&B2)===B1 || (B1&B2)===B2)) continue;
       for(let S1=1; S1<=maxS; S1++){
+        if(S1 & blackS) continue;
         for(let S2=1; S2<=maxS; S2++){
+          if(S2 & blackS) continue;
           if(!allowNesting && S1===S2) continue;
           if(legalPhysical){
             let illegal=false;
