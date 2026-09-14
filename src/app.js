@@ -236,12 +236,12 @@ function loopAdvance(){
   loopTimer = setTimeout(()=>setPlaying(true), 2000);
 }
 
-/* "Randomize at play" fires once, right here, on a fresh start (from rest,
-   or right after a playthrough ends) — resuming a paused mid-sequence
-   playthrough just resumes it, same as always. */
+/* "Randomize at play" only fires from loopAdvance, i.e. on an automatic
+   loop wrap. Pressing play manually — whether from rest, after a pause,
+   or after a reset — never randomizes, so a pause/reset/play always gives
+   a second shot at the same sets. */
 function playToggle(){
   if(playing){ setPlaying(false); return; }
-  if(randomizeAtPlay && (p<0 || p>=COMPILED.length-1)) randomizeSets();
   setPlaying(true);
 }
 
