@@ -61,13 +61,27 @@ body.dark{
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
+/* fixed to the viewport (with a pre-dvh fallback) and non-scrolling, so the
+   three stacked pieces below (heading / hand / transport) always occupy
+   exactly one screen's worth of height instead of overflowing it */
 body{background:var(--bg);color:var(--ink);font-family:var(--font);
      display:flex;gap:28px;padding:26px;flex-wrap:wrap;align-items:stretch;
-     min-height:100vh;transition:background .15s,color .15s}
-.stage{flex:1 1 300px;min-width:260px;display:flex;flex-direction:column;
-       justify-content:flex-start;align-items:center;gap:14px}
-.stagetitle{font-size:30px;font-weight:700;letter-spacing:-.01em;margin:0 0 -8px}
-svg{width:100%;max-width:520px;height:auto;display:block;transition:transform .15s}
+     height:100vh;height:100dvh;overflow:hidden;transition:background .15s,color .15s}
+/* grid, not flex, for the three stacked rows: a flex column with a
+   flex-grow middle row + a max-height:100% aspect-ratio child creates a
+   circular sizing dependency that browsers resolve inconsistently (the
+   svg ends up sized only from max-width, ignoring the height cap). Grid
+   tracks resolve top-down with no such cycle, so minmax(0,1fr) reliably
+   gives the middle row a definite pixel height to hand down. */
+.stage{flex:1 1 300px;min-width:260px;height:100%;min-height:0;display:grid;
+       grid-template-rows:auto minmax(0,1fr) auto;justify-items:center;gap:14px}
+.stagetitle{grid-row:1;font-size:30px;font-weight:700;letter-spacing:-.01em;margin:0 0 -8px}
+/* the hand takes whatever vertical room is left once the heading and the
+   transport (both auto-height rows) have theirs — it grows to fill that
+   space and shrinks below its natural size if it must, rather than
+   pushing the transport out of the viewport. */
+.handwrap{grid-row:2;min-height:0;min-width:0;width:100%;display:flex;align-items:center;justify-content:center}
+svg{max-width:100%;max-height:100%;width:auto;height:auto;display:block;transition:transform .15s}
 svg.right{transform:scaleX(-1)}    /* mirror the whole hand for a right-hand view */
 
 /* line-art defaults */
@@ -239,7 +253,7 @@ h1{font-size:17px;margin:0 0 2px;letter-spacing:-.01em}
 .hint{color:var(--muted);font-size:11px;margin:8px 0 0}
 
 /* transport */
-.transport{width:100%;max-width:400px;display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:2px 0 0}
+.transport{grid-row:3;width:100%;max-width:400px;display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:2px 0 0}
 .tbtn{width:38px;height:38px;border:1.5px solid var(--line);background:var(--surface);border-radius:10px;
       cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;transition:.13s}
 .tbtn:hover{border-color:var(--scroll-thumb);background:var(--surface-hover)}
