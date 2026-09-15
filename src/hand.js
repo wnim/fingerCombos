@@ -41,11 +41,39 @@ function rrect(x,y,w,h,rt,rb){           // vertical rounded rect (rt=top radius
   return `M${x} ${y+rt} Q${x} ${y} ${x+rt} ${y} L${x1-rt} ${y} Q${x1} ${y} ${x1} ${y+rt}`
        + ` L${x1} ${y+h-rb} Q${x1} ${y+h} ${x1-rb} ${y+h} L${x+rb} ${y+h} Q${x} ${y+h} ${x} ${y+h-rb} Z`;
 }
-/* Closed polygon with every corner filleted by radius r — a freehand
-   silhouette (straight edges traced from a reference drawing) still needs
-   its joints softened the way every other shape in this file is. r is
-   clamped per-corner to half its shorter adjacent edge so short edges
-   (like the thumbnail facet) don't overshoot into a bowtie. */
+/* Palm outline, with a bottom-left flap that reaches exactly as far as the
+   thumb's own base stroke currently doesn't (see openRoundedPoly — the
+   eK->b edge is left unstroked so the palm can fill it instead). eK sits
+   at a fixed offset from the thumb's pivot in the thumb's OWN local space;
+   since the thumb rotates by `thumbTheta` around that same pivot, rotating
+   eK's offset by the same angle gives eK's current on-screen position —
+   so the flap tracks the thumb through any splay instead of only fitting
+   it at rest.
+
+   Two edges bound the flap: the diagonal from b out to eK, and the
+   horizontal from eK over to the palm's straight left edge. Only the
+   diagonal is a seam shared with the thumb (the thumb leaves its matching
+   eK->b edge unstroked too — see openRoundedPoly — so between the two of
+   them it draws with NEITHER shape's ink). The horizontal edge has no
+   counterpart on the thumb at all, so it must stay stroked itself — it's
+   the only line marking where the flap meets the hand once the thumb
+   rotates off it during a split. Returns {fill, stroke}: fill is the
+   full outline including both flap edges; stroke is the same outline
+   with just the diagonal (b->eK) left undrawn. */
+function palmPath(thumbTheta){
+  const pTop=222, pBot=THUMB_BASE.y, rt=10, rb=30;
+  const rad=thumbTheta*Math.PI/180, dx=-6, dy=-71;   // eK's offset from THUMB_BASE
+  const fx=THUMB_BASE.x + dx*Math.cos(rad) - dy*Math.sin(rad);
+  const fy=THUMB_BASE.y + dx*Math.sin(rad) + dy*Math.cos(rad);
+  const common=`Q${FX0} ${pTop} ${FX0+rt} ${pTop}`
+      +` L${FX1-rt} ${pTop} Q${FX1} ${pTop} ${FX1} ${pTop+rt}`
+      +` L${FX1} ${pBot-rb} Q${FX1} ${pBot} ${FX1-rb} ${pBot}`
+      +` L${THUMB_BASE.x} ${pBot}`;
+  return {
+    fill: `M${FX0} ${pTop+rt} ${common} L${fx} ${fy} L${FX0} ${fy} Z`,
+    stroke: `M${fx} ${fy} L${FX0} ${fy} L${FX0} ${pTop+rt} ${common}`,
+  };
+}
 function roundedPoly(pts, r){
   const n=pts.length;
   let d='';
@@ -59,6 +87,24 @@ function roundedPoly(pts, r){
   }
   return d+'Z';
 }
+/* Same fillet logic as roundedPoly, but OPEN: starts sharp at pts[0] and
+   ends sharp at pts[n-1] instead of wrapping around to close the loop.
+   Used to stroke everything except the closing edge — e.g. the thumb's
+   base, where that last edge should read as fused into the palm rather
+   than as a seam. */
+function openRoundedPoly(pts, r){
+  const n=pts.length;
+  let d=`M${pts[0].x} ${pts[0].y} `;
+  for(let i=1;i<n-1;i++){
+    const prev=pts[i-1], cur=pts[i], next=pts[i+1];
+    const d1=Math.hypot(cur.x-prev.x, cur.y-prev.y), d2=Math.hypot(next.x-cur.x, next.y-cur.y);
+    const rr=Math.min(r, d1/2, d2/2);
+    const p1={x:cur.x+(prev.x-cur.x)/d1*rr, y:cur.y+(prev.y-cur.y)/d1*rr};
+    const p2={x:cur.x+(next.x-cur.x)/d2*rr, y:cur.y+(next.y-cur.y)/d2*rr};
+    d += `L${p1.x} ${p1.y} Q${cur.x} ${cur.y} ${p2.x} ${p2.y} `;
+  }
+  return d+`L${pts[n-1].x} ${pts[n-1].y}`;
+}
 
 /**
  * Build a programmable hand inside `svg`.
@@ -71,6 +117,7 @@ export function createHand(svg, {onStateChange}={}){
   let BOXES={};       // 'B1'|'B2' -> <g>   set-map boxes, rebuilt per paint (bend sets)
   let SLOTMAP={};     // slotId -> {s1, s2} set-map chevrons (split sets)
   let ENTRYLABEL=null;// <g> — the "then here" caption, rebuilt per paint
+  let PALM_FILL=null, PALM_STROKE=null; // palm outline as fill+stroke; both re-path as the thumb rotates
   let order=[], lay={};
   let raf=null;
   const state={ enableThumb:false, bends:new Set(), splits:new Set() };
@@ -85,12 +132,16 @@ export function createHand(svg, {onStateChange}={}){
     DIGITS={}; GAPS={}; BOXES={}; SLOTMAP={}; ENTRYLABEL=null;
 
     // palm — same width as the finger band (FX0..FX1) so its sides line
-    // up with the outer fingers instead of bulging past them. Bottom
-    // edge sits at THUMB_BASE.y (404) so the thumb's own base/silhouette
-    // bottom lands flush with the palm's bottom, instead of floating
-    // above it.
-    svg.appendChild(el('path',{class:'palm', d:
-      rrect(FX0, 222, FX1-FX0, THUMB_BASE.y-222, 10, 30)}));
+    // up with the outer fingers instead of bulging past them. Bottom edge
+    // sits at THUMB_BASE.y (404) so the thumb's own base/silhouette bottom
+    // lands flush with the palm's bottom. Its bottom-left flap is kept in
+    // sync with the thumb's live rotation in animate() below, so it's
+    // built at rest (theta 0) here and re-pathed every frame the thumb moves.
+    const palmD=palmPath(THUMB_REST);
+    PALM_FILL = el('path',{class:'palm', d:palmD.fill, style:'stroke:none'});
+    PALM_STROKE = el('path',{class:'palm', d:palmD.stroke, style:'fill:none'});
+    svg.appendChild(PALM_FILL);
+    svg.appendChild(PALM_STROKE);
 
     // gap markers — an annotation layer, appended LAST so the digits
     // can't occlude the chevrons or the slot label.
@@ -158,7 +209,12 @@ export function createHand(svg, {onStateChange}={}){
         const pt=(dx,dy)=>({x:b.x+dx, y:b.y+dy});
 
         const eB=pt(-41,-40), eD=pt(-47,-126), eE=pt(-67,-154), eG=pt(-53,-166), eI=pt(-10,-146), eK=pt(-6,-71);
-        ext.appendChild(el('path',{class:'seg', d:roundedPoly([b, eB, eD, eE, eG, eI, eK], 10)}));
+        const eRing=[b, eB, eD, eE, eG, eI, eK];
+        // fill drawn as the full closed shape; the outline is drawn SEPARATELY
+        // and left open across the eK->b edge (the base, facing the palm's
+        // new flap) so that edge reads as fused rather than as a seam.
+        ext.appendChild(el('path',{class:'seg', d:roundedPoly(eRing, 10), style:'stroke:none'}));
+        ext.appendChild(el('path',{class:'seg', d:openRoundedPoly(eRing, 10), style:'fill:none'}));
         // nail facet, nested right at the tip's direction-change corner
         const nM=pt(-63,-153), nN=pt(-53,-153), nP=pt(-41,-140), nQ=pt(-52,-132);
         ext.appendChild(el('path',{class:'nail', d:roundedPoly([nM, nN, nP, nQ], 3)}));
@@ -169,7 +225,9 @@ export function createHand(svg, {onStateChange}={}){
            you actually curl a thumb in — ending in a small loop with the
            nail facet inside it. -------------------------------------- */
         const fD=pt(-42,-98), fE=pt(-33,-109), fF=pt(11,-112), fG=pt(19,-102), fH=pt(2,-88), fI=pt(-20,-92);
-        bent.appendChild(el('path',{class:'seg', d:roundedPoly([b, eB, fD, fE, fF, fG, fH, fI], 10)}));
+        const fRing=[b, eB, fD, fE, fF, fG, fH, fI];
+        bent.appendChild(el('path',{class:'seg', d:roundedPoly(fRing, 10), style:'stroke:none'}));
+        bent.appendChild(el('path',{class:'seg', d:openRoundedPoly(fRing, 10), style:'fill:none'}));
         const bM=pt(-9,-100), bN=pt(-13,-109), bL=pt(7,-101);
         bent.appendChild(el('path',{class:'nail', d:roundedPoly([fF, bL, bM, bN], 3)}));
       } else {
@@ -340,6 +398,11 @@ export function createHand(svg, {onStateChange}={}){
         d.node.setAttribute('transform',`rotate(${d.anim.theta.toFixed(3)} ${b.x} ${b.y})`);
         d.ext.setAttribute('opacity',(1-d.anim.bend).toFixed(3));
         d.bent.setAttribute('opacity',(d.anim.bend).toFixed(3));
+        if(id==='T'){
+          const palmD=palmPath(d.anim.theta);
+          PALM_FILL.setAttribute('d', palmD.fill);
+          PALM_STROKE.setAttribute('d', palmD.stroke);
+        }
       });
       raf = moving ? requestAnimationFrame(step) : null;
     };
