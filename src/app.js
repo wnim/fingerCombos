@@ -532,6 +532,18 @@ document.addEventListener('keydown', e=>{
   setPlaying(false); go(-1);
 });
 
+document.addEventListener('keydown', e=>{
+  if(e.key!=='s' && e.key!=='S') return;
+  const t = e.target;
+  const tag = t?.tagName;
+  const type = t?.type;
+  const isTextualInput = tag==='INPUT' && type!=='checkbox' && type!=='radio' && type!=='button' && type!=='submit' && type!=='range';
+  if(isTextualInput || tag==='SELECT' || tag==='TEXTAREA' || t?.isContentEditable) return;
+  e.preventDefault();
+  $('handSw').checked = !$('handSw').checked;
+  $('handSw').onchange();
+});
+
 /* ---- code-driven use from the console ----------------------- */
 window.hand = hand;
 window.routine = {
