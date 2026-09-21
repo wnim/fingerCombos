@@ -5,14 +5,15 @@ import {
   parseRoutine, swapHalf, HALF, ROUTINE, tokenOf, validateRoutine,
   compile, membersOf, defaultSets, sanitizeSets, hasIllegalOverlap, hasSiblingSubset, randomSets,
   countPossibleCombinations, serializeSets, parseSetsText,
+  SEQUENCES, HALF_NO_SIMUL, ROUTINE_NO_SIMUL, ROUTINE_COMPLETE, ROUTINE_DENSE,
 } from '../src/core.js';
 
 /* A step is "motionless" if the hand's bends/splits are identical to
    whatever they were before it — i.e. the step's action(s) changed
    nothing visible, regardless of what the instruction text claims. */
-function hasMotionlessStep(sets, order){
+function hasMotionlessStep(sets, order, routine){
   let prev = {bends:[], splits:[]};
-  return compile(sets, order).some(c => {
+  return compile(sets, order, routine).some(c => {
     const same = JSON.stringify(c.state)===JSON.stringify(prev);
     prev = c.state;
     return same;
@@ -105,6 +106,193 @@ test('every set returns to neutral, so playback loops', () => {
   const active={B1:false,B2:false,S1:false,S2:false};
   ROUTINE.forEach(step=>step.forEach(a=>{ active[a.set]=!a.undo; }));
   assert.deepEqual(active, {B1:false,B2:false,S1:false,S2:false});
+});
+
+/* ---- the sequence picker (5 selectable routines) ------------ */
+
+/* Cyclic step-adjacency coverage of the 16 ordered transitions between
+   B1/B2/S1/S2 (12 cross-set + 4 same-set) — the property the sequence
+   designs are judged on. A transition exists between whatever set(s) a
+   step acts on and whatever set(s) the next step acts on (wrapping, since
+   playback loops); a "&" step contributes more than one such pair. */
+function transitionCoverage(routine){
+  const n = routine.length, cross = new Set(), self = new Set();
+  for(let i=0;i<n;i++){
+    const cur = routine[i].map(a=>a.set), next = routine[(i+1)%n].map(a=>a.set);
+    for(const a of cur) for(const b of next){
+      if(a===b) self.add(a); else cross.add(a+'->'+b);
+    }
+  }
+  return {cross, self};
+}
+
+test('every selectable sequence is legal and returns to neutral', () => {
+  for(const [key, {label, steps}] of Object.entries(SEQUENCES)){
+    assert.deepEqual(validateRoutine(steps), [], `${key} (${label})`);
+    const active={B1:false,B2:false,S1:false,S2:false};
+    steps.forEach(step=>step.forEach(a=>{ active[a.set]=!a.undo; }));
+    assert.deepEqual(active, {B1:false,B2:false,S1:false,S2:false}, `${key} (${label})`);
+  }
+});
+
+test('the no-simul half is the holy half with its two "&" pairs unrolled', () => {
+  assert.equal(HALF_NO_SIMUL.length, 18);          // 16 steps -> 18, the two pairs split in two
+  assert.equal(HALF_NO_SIMUL.flat().length, 18);
+  assert.equal(HALF_NO_SIMUL.filter(s=>s.length>1).length, 0);
+  assert.equal(ROUTINE_NO_SIMUL.length, 36);
+  assert.equal(ROUTINE_NO_SIMUL.flat().length, 36);
+});
+
+test('dropping simultaneity closes the S1<->S2 gap the holy sequence never covers', () => {
+  const holy = transitionCoverage(ROUTINE);
+  assert.equal(holy.cross.has('S1->S2'), false);
+  assert.equal(holy.cross.has('S2->S1'), false);
+  assert.equal(holy.cross.size, 10);
+  assert.deepEqual([...holy.self].sort(), ['B1','B2']);
+
+  const noSimul = transitionCoverage(ROUTINE_NO_SIMUL);
+  assert.equal(noSimul.cross.has('S1->S2'), true);
+  assert.equal(noSimul.cross.has('S2->S1'), true);
+  assert.equal(noSimul.cross.size, 12);                    // every cross-set transition, now
+  assert.deepEqual([...noSimul.self].sort(), ['B1','B2']); // self-transitions unchanged
+});
+
+/* Which (bend-set, split-set) pairs are ever simultaneously active — the
+   property "Split bends" legality actually turns on (see
+   hasIllegalOverlap). The holy sequence only ever pairs B1 with S1 and
+   B2 with S2; widening that to a third or fourth pair forces every
+   bend to stay clear of every split rather than just its own partner,
+   which is what collapsed the legal-combination count for an earlier,
+   abandoned "Eulerian circuit" attempt at a complete sequence (240->12
+   with no thumb, 2,882->168 with it — a 17-20x drop, all from that one
+   structural difference). */
+function coexistingPairs(routine){
+  const active={B1:false,B2:false,S1:false,S2:false};
+  const pairs=new Set();
+  for(const step of routine){
+    for(const a of step) active[a.set]=!a.undo;
+    for(const b of ['B1','B2']) for(const s of ['S1','S2'])
+      if(active[b] && active[s]) pairs.add(b+'+'+s);
+  }
+  return pairs;
+}
+
+test('the holy sequence only ever pairs B1 with S1 and B2 with S2', () => {
+  assert.deepEqual([...coexistingPairs(ROUTINE)].sort(), ['B1+S1','B2+S2']);
+});
+
+test('"complete" hits all 16 transitions exactly once each — 16 actions, zero redundancy', () => {
+  assert.equal(ROUTINE_COMPLETE.length, 16);
+  assert.equal(ROUTINE_COMPLETE.flat().length, 16);
+  assert.equal(ROUTINE_COMPLETE.filter(s=>s.length>1).length, 0);   // no simultaneity
+  const {cross, self} = transitionCoverage(ROUTINE_COMPLETE);
+  assert.equal(cross.size, 12);
+  assert.equal(self.size, 4);
+  // 16 actions can realize at most 16 cyclic adjacent pairs, so hitting
+  // all 16 transitions means none of them repeats
+});
+
+test('"complete" preserves both physical properties the holy sequence relies on', () => {
+  // only B1+S1 and B2+S2 may ever be simultaneously active (what "Split
+  // bends" legality actually costs — see the abandoned Eulerian attempt)
+  assert.deepEqual([...coexistingPairs(ROUTINE_COMPLETE)].sort(), ['B1+S1','B2+S2']);
+
+  // S1 and S2 must never be simultaneously active either — hasSiblingSubset's
+  // S1/S2 branch only checks for exact equality because it assumes this;
+  // an earlier trimmed sequence broke it and silently stopped catching
+  // real dead steps
+  const active={S1:false,S2:false};
+  for(const step of ROUTINE_COMPLETE) for(const a of step){
+    if(a.set==='S1'||a.set==='S2') active[a.set]=!a.undo;
+    assert.ok(!(active.S1 && active.S2), 'S1 and S2 are simultaneously active');
+  }
+});
+
+test('"complete" costs nothing under either toggle — same legal-combo count, same motionless-step detection, as the holy sequence', () => {
+  for(const thumb of [false, true]){
+    const order = digitOrder(thumb);
+    assert.equal(
+      countPossibleCombinations(order, true, false, null, ROUTINE_COMPLETE),
+      countPossibleCombinations(order, true, false, null, ROUTINE),
+      `combo count, thumb=${thumb}`,
+    );
+  }
+
+  // brute-force, no thumb: everywhere hasSiblingSubset calls a quadruple
+  // "fine" (no forced no-op), "complete" must agree — this is exactly the
+  // check that caught the earlier, abandoned trimmed sequence
+  const order = digitOrder(false);
+  const bSubsets = nonEmptySubsets(order), sSubsets = nonEmptySubsets(slotsOf(order));
+  for(const B1 of bSubsets) for(const B2 of bSubsets) for(const S1 of sSubsets) for(const S2 of sSubsets){
+    const sets={B1,B2,S1,S2};
+    if(hasSiblingSubset(sets)) continue;
+    assert.equal(hasMotionlessStep(sets, order, ROUTINE_COMPLETE), false,
+      `unexpected stall: B1=${[...B1]} B2=${[...B2]} S1=${[...S1]} S2=${[...S2]}`);
+  }
+});
+
+/* "Dense" pushes the same rule set ("complete" hits all 16 transitions;
+   this asks a different question: what's the longest trail possible if
+   ANY of the 7 legal states up to 2 bits apart may be bridged, not just
+   the one pair (S1<->S2) that's actually forced?) as far as it goes,
+   MINUS the 3 detours (2 self-cancelling pairs + a 4-move round trip)
+   that a straight 30-move Eulerian circuit includes but that never lead
+   anywhere new — 22 moves. A trail never repeats a directed (state,
+   move) edge and never revisits neutral until the very last step —
+   that's the property to check here, not transition-coverage (every
+   "complete" transition is trivially still covered along the way). */
+function directedEdgeTrace(routine){
+  const state={B1:false,B2:false,S1:false,S2:false};
+  let prevKey = '';
+  const path = [Object.keys(state).filter(k=>state[k]).sort().join(',')||'∅'];
+  routine.forEach(step=>{
+    step.forEach(a=>state[a.set]=!a.undo);
+    path.push(['B1','B2','S1','S2'].filter(k=>state[k]).sort().join(',')||'∅');
+  });
+  return path;
+}
+
+test('"dense" never repeats an edge, never revisits neutral early', () => {
+  assert.equal(ROUTINE_DENSE.length, 22);
+  assert.deepEqual([...coexistingPairs(ROUTINE_DENSE)].sort(), ['B1+S1','B2+S2']);
+
+  const path = directedEdgeTrace(ROUTINE_DENSE);
+  assert.equal(path[0], '∅');
+  assert.equal(path.at(-1), '∅');
+  path.slice(1, -1).forEach((k,i)=>assert.notEqual(k, '∅', `neutral revisited mid-route at step ${i+1}`));
+
+  const edges = new Set();
+  for(let i=0;i<path.length-1;i++){
+    const e = path[i]+'->'+path[i+1];
+    assert.ok(!edges.has(e), `repeated edge ${e}`);
+    edges.add(e);
+  }
+  assert.equal(edges.size, 22);
+});
+
+test('"dense" is mostly simultaneous, and more so than before trimming — the cut fell entirely on single-bit moves', () => {
+  const simul = ROUTINE_DENSE.filter(s=>s.length>1).length;
+  assert.ok(simul > ROUTINE_DENSE.length/2);
+  assert.equal(simul, 16);   // every compound move from the untrimmed 30-move circuit survives
+});
+
+test('"dense" costs nothing under either toggle, same as every other sequence here', () => {
+  for(const thumb of [false, true]){
+    const order = digitOrder(thumb);
+    assert.equal(
+      countPossibleCombinations(order, true, false, null, ROUTINE_DENSE),
+      countPossibleCombinations(order, true, false, null, ROUTINE),
+      `combo count, thumb=${thumb}`,
+    );
+  }
+  const order = digitOrder(false);
+  const bSubsets = nonEmptySubsets(order), sSubsets = nonEmptySubsets(slotsOf(order));
+  for(const B1 of bSubsets) for(const B2 of bSubsets) for(const S1 of sSubsets) for(const S2 of sSubsets){
+    const sets={B1,B2,S1,S2};
+    if(hasSiblingSubset(sets)) continue;
+    assert.equal(hasMotionlessStep(sets, order, ROUTINE_DENSE), false,
+      `unexpected stall: B1=${[...B1]} B2=${[...B2]} S1=${[...S1]} S2=${[...S2]}`);
+  }
 });
 
 /* ---- sets & compile ---------------------------------------- */

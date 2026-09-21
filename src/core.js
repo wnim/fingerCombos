@@ -46,7 +46,13 @@ export function splayAngles(order, splits){
     cum[i]=run;
     if(i<order.length-1) run += open.has(order[i]+''+order[i+1]) ? 1 : 0;
   });
-  const s=[...cum].sort((a,b)=>a-b), m=s.length;
+  /* The anchor is a FINGER concept — it balances motion across the finger
+     chain only. The thumb always sits at cum=0 as the chain's leftmost
+     link, so folding it into this pool would skew the median toward zero
+     (dumping a split's rotation onto one side) purely because it's an
+     inert extra data point, not because the fingers need to move less. */
+  const fingerCum = order.filter(id=>DIGIT_TABLE[id].kind==='finger').map(id=>cum[order.indexOf(id)]);
+  const s=[...fingerCum].sort((a,b)=>a-b), m=s.length;
   const anchor = m%2 ? s[(m-1)/2] : (s[m/2-1]+s[m/2])/2;   // median = least total motion
   const out={};
   order.forEach((id,i)=>{ out[id]=(cum[i]-anchor)*SPLIT_ANGLE; });
@@ -88,6 +94,94 @@ export function swapHalf(steps){
 
 export const HALF    = parseRoutine(ROUTINE_HALF);
 export const ROUTINE = [...HALF, ...swapHalf(HALF)];    // 32 steps
+
+/* No-simul variant: the same routine, but the two simultaneous "&" steps
+   (see docs/sequence.md) are unrolled into two ordinary sequential steps
+   instead — derived from ROUTINE_HALF itself, not a separate hand-typed
+   string, so the two can never drift apart. */
+export const ROUTINE_HALF_NO_SIMUL = ROUTINE_HALF.replace(/&/g, '');
+export const HALF_NO_SIMUL    = parseRoutine(ROUTINE_HALF_NO_SIMUL);
+export const ROUTINE_NO_SIMUL = [...HALF_NO_SIMUL, ...swapHalf(HALF_NO_SIMUL)];
+
+/* ROUTINE_COMPLETE: a from-scratch 16-action sequence hitting all 16
+   possible transitions (12 cross-set + 4 same-set) exactly once each —
+   zero redundancy, unlike ROUTINE/ROUTINE_NO_SIMUL, which pad the same
+   coverage out to 36 actions by revisiting B1/B2 far more than needed.
+   Two earlier attempts were tried and abandoned before this one:
+
+   1. A raw Eulerian circuit over the four sets, ignoring physical
+      constraints entirely: it necessarily puts every bend set
+      concurrently active with every split set at some point, which
+      collapses the legal-combination count under "Split bends"
+      disabled by 17-20x (240->12 with no thumb, 2,882->168 with it).
+
+   2. A trimmed circuit that fixed (1) — restricting coexistence to
+      just B1+S1 and B2+S2, matching the holy sequence — but didn't
+      also keep S1 and S2 mutually exclusive the way the holy sequence
+      does. hasSiblingSubset()'s S1/S2 branch only checks for exact
+      equality (see its comment), because it assumes S1/S2 are never
+      simultaneously active; break that assumption and "Nested sets"
+      silently stops catching real dead steps (verified: 2,640 of 4,620
+      test quadruples it called fine actually stalled).
+
+   This sequence keeps both properties the holy sequence has — B1 only
+   ever coexists with S1, B2 only with S2, and S1/S2 are never
+   simultaneously active — so it costs nothing under either toggle:
+   same legal-combination count as ROUTINE (240 / 2,882), and the same
+   zero mismatches against hasSiblingSubset's motionless-step check.
+
+   It's a loop, so any rotation of it has the exact same properties —
+   same transitions, same legality, same neutral-return point (every
+   rotation point here happens to land on neutral anyway). The 16 actions
+   split into two contiguous 8-action halves: four isolated "flip it on,
+   flip it right back off" self-transitions (B1/-B1/B2/-B2, S1/-S1/S2/-S2
+   — the plainest moves here, structurally, in any rotation) and eight
+   actions where a bend and a split set actually hand off to each other.
+   Rotated so the two self-transition quadruples sit together at the
+   front and the entire handoff stretch runs uninterrupted to the end —
+   a first attempt at this rotation moved only half that block, leaving
+   the other self-transition quadruple stranded at the tail (a trivial-
+   meaty-trivial sandwich instead of a build-up). */
+export const ROUTINE_COMPLETE_STR = "b1-b1b2-b2s1-s1s2-s2s1b1-s1b2-b1s2-b2-s2";
+export const ROUTINE_COMPLETE = parseRoutine(ROUTINE_COMPLETE_STR);
+
+/* ROUTINE_DENSE: same rules as ROUTINE_COMPLETE — never revisit neutral
+   until the very end, never repeat a (state, move) pair, stay inside the
+   same 7 legal non-neutral states (B1 only with S1, B2 only with S2, S1
+   and S2 never together) — but where COMPLETE only adds a compound "&"
+   move where one is truly forced (S1<->S2, the only pair 2 bits apart
+   with no single-bit route), this one takes every legal state pair up to
+   2 bits apart as a usable move, single-bit or compound alike. That
+   graph has 28 interior moves + the 2 neutral touches = a provable
+   30-move ceiling (found the same way ROUTINE_COMPLETE was — Hierholzer's
+   algorithm on the fully-balanced graph).
+
+   The straight 30-move Eulerian circuit included 3 detours that leave
+   the state exactly where they found it (a bend+unbend of a single set
+   with nothing else changing, twice, plus a 4-move round trip through
+   B1/B2/B1,B2 back to its start) — real edges in the 30-edge graph, but
+   ones that only lead back to somewhere already visited rather than
+   forward to something new. Dropping all three costs nothing checkable
+   (still legal, still zero repeated edges, still never touches neutral
+   before the end, still the same 240 / 2,882 legal-combination count)
+   and removes exactly the steps that read as filler: what's left is 22
+   moves, 16 of them simultaneous (73%, up from 53% in the untrimmed 30),
+   because the cut fell entirely on single-bit moves and left every
+   compound one standing. */
+export const ROUTINE_DENSE_STR = "b1-b1&s2s1&-s2-s1&s2b2&-s2s2b1&-s2-b1&s2-s2-b2&s2b1&-s2s1b2&-s1-b2&s1-s1-b1&s1b2&-s1-b2&s1b1&-s1-b1&b2b1&-b2-b1";
+export const ROUTINE_DENSE = parseRoutine(ROUTINE_DENSE_STR);
+
+/* The six sequences selectable in the UI. One registry so index.html's
+   dropdown and app.js's compile/randomize calls can't disagree about
+   what's on offer — see docs/sequence.md. */
+export const SEQUENCES = {
+  holySimul:       { label: 'Holy with simul',    steps: ROUTINE },
+  holyNoSimul:     { label: 'Holy no simul',       steps: ROUTINE_NO_SIMUL },
+  halfHolySimul:   { label: 'Half holy simul',     steps: HALF },
+  halfHolyNoSimul: { label: 'Half holy no simul',  steps: HALF_NO_SIMUL },
+  complete:        { label: 'Complete',            steps: ROUTINE_COMPLETE },
+  dense:           { label: 'Dense',               steps: ROUTINE_DENSE },
+};
 
 /** Render a step back into its abstract token: `-S1&S2` */
 export const tokenOf = step => step.map(a=>(a.undo?'-':'')+a.set).join('&');
@@ -213,11 +307,11 @@ function randomQuadruple(order, slots, rng, blacklist){
    sums over the whole space. Runs compile() once per candidate (fine —
    randomSets only ever tests one candidate at a time, unlike
    countPossibleCombinations which must check every candidate). */
-function isLegalQuadruple(sets, order, legalPhysical, allowNesting){
+function isLegalQuadruple(sets, order, legalPhysical, allowNesting, routine){
   if(!allowNesting && hasSiblingSubset(sets)) return false;
   if(legalPhysical){
     const slots = slotsOf(order);
-    if(compile(sets, order).some(c=>hasIllegalOverlap(c.state.bends, c.state.splits, slots))) return false;
+    if(compile(sets, order, routine).some(c=>hasIllegalOverlap(c.state.bends, c.state.splits, slots))) return false;
   }
   return true;
 }
@@ -230,11 +324,11 @@ function isLegalQuadruple(sets, order, legalPhysical, allowNesting){
    the unlucky tail, since each attempt is just one compile() call. */
 const MAX_RANDOM_TRIES = 5000;
 
-export function randomSets(order, legalPhysical, allowNesting = false, rng = Math.random, blacklist = null){
+export function randomSets(order, legalPhysical, allowNesting = false, rng = Math.random, blacklist = null, routine = ROUTINE){
   const slots = slotsOf(order);
   for(let i=0;i<MAX_RANDOM_TRIES;i++){
     const candidate = randomQuadruple(order, slots, rng, blacklist);
-    if(isLegalQuadruple(candidate, order, legalPhysical, allowNesting)) return candidate;
+    if(isLegalQuadruple(candidate, order, legalPhysical, allowNesting, routine)) return candidate;
   }
   return randomQuadruple(order, slots, rng, blacklist);   // ~2.6e-11 chance; see MAX_RANDOM_TRIES above
 }
@@ -244,13 +338,14 @@ export function randomSets(order, legalPhysical, allowNesting = false, rng = Mat
    randomSets applies (legalPhysical / allowNesting). Digits and slots
    are few enough (≤5 and ≤4) that brute-forcing every quadruple as a
    bitmask is cheap — worst case (thumb on, splitBends off) is ~220k
-   quadruples × 32 routine steps, well under a second.
+   quadruples × up to 36 routine steps (the longest of the five
+   selectable sequences — see SEQUENCES), well under a second.
 
    bends/splits per step take one of only four shapes — ∅, set1, set2,
    or their union — depending on which of the pair is active at that
-   step (fixed by ROUTINE, independent of set contents), which is what
-   the bitmask OR-in-if pattern below is exploiting.               */
-export function countPossibleCombinations(order, legalPhysical, allowNesting, blacklist = null){
+   step (fixed by the routine, independent of set contents), which is
+   what the bitmask OR-in-if pattern below is exploiting.           */
+export function countPossibleCombinations(order, legalPhysical, allowNesting, blacklist = null, routine = ROUTINE){
   const slots = slotsOf(order);
   const n = order.length, m = slots.length;
   const borderMask = slots.map((s, j) => {
@@ -262,7 +357,7 @@ export function countPossibleCombinations(order, legalPhysical, allowNesting, bl
 
   const active = {B1:false,B2:false,S1:false,S2:false};
   const steps = [];
-  for(const step of ROUTINE){
+  for(const step of routine){
     for(const a of step) active[a.set] = !a.undo;
     steps.push({b1:active.B1, b2:active.B2, s1:active.S1, s2:active.S2});
   }
@@ -365,7 +460,7 @@ export function parseSetsText(text){
    finger that B2 is still holding, because that finger is still in the
    union. (The old model add/deleted members on a shared Set and got this
    wrong; see docs/architecture.md.)                                  */
-export function compile(sets, order){
+export function compile(sets, order, routine = ROUTINE){
   const active={B1:false,B2:false,S1:false,S2:false};
   const union = kind => {
     const u=new Set();
@@ -375,7 +470,7 @@ export function compile(sets, order){
   };
 
   const out=[];
-  for(const step of ROUTINE){
+  for(const step of routine){
     for(const a of step) active[a.set] = !a.undo;   // whole step lands at once
     const bends=union('B'), splits=union('S');
 

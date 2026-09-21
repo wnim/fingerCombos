@@ -92,7 +92,6 @@ svg.right{transform:scaleX(-1)}    /* mirror the whole hand for a right-hand vie
 .nail{fill:var(--surface);stroke:var(--ink);stroke-width:1.8;stroke-linejoin:round}
 .cuticle{fill:none;stroke:var(--ink-soft);stroke-width:1.4;stroke-linecap:round}
 .shade{stroke:var(--ink-soft);stroke-width:1.6;stroke-linecap:round;opacity:.6}
-.digit.inactive{opacity:.35}   /* thumb drawn even when disabled, just muted: not part of any slot/set */
 .gapmark line{stroke:var(--split);stroke-width:3;stroke-linecap:round;opacity:0;transition:opacity .18s}
 .gapmark.on line{opacity:1}
 .gaplabel{font-family:var(--mono);font-size:12px;fill:var(--split);opacity:0;transition:opacity .18s;text-anchor:middle;
@@ -241,6 +240,9 @@ h1{font-size:17px;margin:0 0 2px;letter-spacing:-.01em}
 .setsinput{flex:1 1 0;min-width:0;font-family:var(--mono);font-size:12.5px;color:var(--ink);
            background:var(--surface);border:1.5px solid var(--line);border-radius:10px;padding:8px 10px}
 .setsinput:focus{outline:none;border-color:var(--scroll-thumb)}
+.seqsel{flex:0 0 auto;font-size:13px;color:var(--ink);background:var(--surface);
+        border:1.5px solid var(--line);border-radius:10px;padding:7px 9px;cursor:pointer}
+.seqsel:focus{outline:none;border-color:var(--scroll-thumb)}
 .setgroup{margin:0 0 9px}
 .setgroup .setrow{margin:0 0 4px}
 .setwarn{color:var(--err-text);font-size:11px;margin:0 0 5px 36px}

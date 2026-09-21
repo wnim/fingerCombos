@@ -74,9 +74,9 @@
     <label class="switch" for="nestedSw"><input type="checkbox" id="nestedSw"><span class="track"><span class="knob"></span></span></label>
   </div>
 
-  <div class="row" title="Play only the first half of the holy sequence, before the B/S sets swap">
-    <label for="halfSw">Half sequence</label>
-    <label class="switch" for="halfSw"><input type="checkbox" id="halfSw"><span class="track"><span class="knob"></span></span></label>
+  <div class="row" title="Which compiled sequence to play: the full holy routine (with or without its one simultaneous step), just its first half, Complete (every legal move exactly once, no simultaneity beyond the one that's forced), or Dense (the same rules pushed further — more moves, but most of them simultaneous). See docs/sequence.md.">
+    <label for="seqSel">Sequence</label>
+    <select class="seqsel" id="seqSel"></select>
   </div>
 
   <div class="row" title="Restart from the beginning automatically when playback reaches the end. With Randomize at play on, each restart randomizes the sets first (pausing 2s so you can see the new set map)">

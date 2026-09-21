@@ -4,7 +4,7 @@
    the puppet.
    ============================================================ */
 import {
-  ROUTINE, HALF, SET_KEYS, digitOrder, slotsOf, validateRoutine, compile, defaultSets, sanitizeSets,
+  SEQUENCES, SET_KEYS, digitOrder, slotsOf, validateRoutine, compile, defaultSets, sanitizeSets,
   hasIllegalOverlap, hasSiblingSubset, subsumes, setsEqual, randomSets, countPossibleCombinations,
   serializeSets, parseSetsText,
 } from './core.js';
@@ -12,13 +12,19 @@ import { createHand } from './hand.js';
 
 const $ = id => document.getElementById(id);
 
-/* ---- fail loud: the const must be sound -------------------- */
-const ROUTINE_ERRORS = validateRoutine(ROUTINE);
-if(ROUTINE_ERRORS.length){
-  const e=$('err');
-  e.hidden=false; e.textContent='⚠ Illegal routine — '+ROUTINE_ERRORS.join('  •  ');
-  console.error('Illegal routine:', ROUTINE_ERRORS);
-  throw new Error('Illegal routine: '+ROUTINE_ERRORS[0]);
+const SEQUENCE_KEYS = Object.keys(SEQUENCES);
+const DEFAULT_SEQUENCE = 'halfHolySimul';
+
+/* ---- fail loud: every selectable sequence must be sound, not just
+   whichever one happens to be active right now -------------------- */
+for(const [key, {label, steps}] of Object.entries(SEQUENCES)){
+  const errs = validateRoutine(steps);
+  if(errs.length){
+    const e=$('err');
+    e.hidden=false; e.textContent=`⚠ Illegal routine "${label}" — `+errs.join('  •  ');
+    console.error(`Illegal routine "${label}" (${key}):`, errs);
+    throw new Error(`Illegal routine "${label}": `+errs[0]);
+  }
 }
 
 /* ============================================================
@@ -39,7 +45,7 @@ function saveSession(){
       showMap,
       splitBends,
       allowNesting,
-      halfSequence,
+      sequence: sequenceKey,
       descCollapsed,
       seqOpen,
       panelOpen,
@@ -83,7 +89,12 @@ function loadSession(){
     const showMap=boolOr(d.showMap, true);
     const splitBends=!!d.splitBends;
     const allowNesting=!!d.allowNesting;
-    const halfSequence=boolOr(d.halfSequence, true);
+    // a session saved before the sequence picker only ever has the old
+    // boolean; map it onto its closest equivalent so nobody's playback
+    // choice silently resets
+    const sequence = SEQUENCE_KEYS.includes(d.sequence) ? d.sequence
+      : typeof d.halfSequence==='boolean' ? (d.halfSequence ? 'halfHolySimul' : 'holySimul')
+      : DEFAULT_SEQUENCE;
     const descCollapsed=!!d.descCollapsed;
     const seqOpen=!!d.seqOpen;
     const panelOpen=!!d.panelOpen;
@@ -97,7 +108,7 @@ function loadSession(){
       right: sanitizeBlacklistSide(d.blacklist?.right, order),
     };
     const tempoValue = Number.isFinite(d.tempoValue) ? d.tempoValue : null;
-    return {thumb, rightHand, darkMode, loop, randomizeAtPlay, showMap, splitBends, allowNesting, halfSequence, descCollapsed, seqOpen, panelOpen, sets, blacklist, tempoValue};
+    return {thumb, rightHand, darkMode, loop, randomizeAtPlay, showMap, splitBends, allowNesting, sequence, descCollapsed, seqOpen, panelOpen, sets, blacklist, tempoValue};
   }catch{ return null; }
 }
 
@@ -123,7 +134,7 @@ let randomizeAtPlay = restored?.randomizeAtPlay ?? true;
 let showMap = restored?.showMap ?? true;
 let splitBends = restored?.splitBends ?? false;
 let allowNesting = restored?.allowNesting ?? false;
-let halfSequence = restored?.halfSequence ?? true;
+let sequenceKey = restored?.sequence ?? DEFAULT_SEQUENCE;
 let descCollapsed = restored?.descCollapsed ?? false;
 let seqOpen = restored?.seqOpen ?? false;
 let panelOpen = restored?.panelOpen ?? false;
@@ -166,8 +177,7 @@ const stateAt = i =>
       : {thumb:hand.state.thumb, ...COMPILED[i].state};
 
 function recompile(){
-  COMPILED = compile(SETS, digitOrder(hand.state.thumb));
-  if(halfSequence) COMPILED = COMPILED.slice(0, HALF.length);
+  COMPILED = compile(SETS, digitOrder(hand.state.thumb), SEQUENCES[sequenceKey].steps);
   hand.setMap(SETS);
   renderSeq();
   if(p>COMPILED.length-1) p=COMPILED.length-1;
@@ -270,7 +280,7 @@ function violatesPhysical(testSets){
   if(splitBends) return false;
   const order=digitOrder(hand.state.thumb);
   const slots=slotsOf(order);
-  return compile(testSets, order).some(c=>hasIllegalOverlap(c.state.bends, c.state.splits, slots));
+  return compile(testSets, order, SEQUENCES[sequenceKey].steps).some(c=>hasIllegalOverlap(c.state.bends, c.state.splits, slots));
 }
 
 /* "Nested sets" off: neither of B1/B2 (or S1/S2) may be a full subset of
@@ -407,7 +417,7 @@ function syncChips(){
    chosen), so it's recomputed on those changes rather than every click. */
 function updateRandCount(){
   const order = digitOrder(hand.state.thumb);
-  const n = countPossibleCombinations(order, !splitBends, allowNesting, blacklistSide());
+  const n = countPossibleCombinations(order, !splitBends, allowNesting, blacklistSide(), SEQUENCES[sequenceKey].steps);
   $('randCount').textContent = `(${n.toLocaleString()} combinations)`;
 }
 
@@ -416,7 +426,7 @@ function updateRandCount(){
    is a no-op — both filters are enforced inside randomSets itself. */
 function randomizeSets(){
   const order = digitOrder(hand.state.thumb);
-  const next = randomSets(order, !splitBends, allowNesting, Math.random, blacklistSide());
+  const next = randomSets(order, !splitBends, allowNesting, Math.random, blacklistSide(), SEQUENCES[sequenceKey].steps);
   for(const key of SET_KEYS) SETS[key] = next[key];
   recompile(); saveSession();
 }
@@ -484,7 +494,10 @@ $('crSw').onchange=()=>{
 $('mapSw').onchange=()=>{ showMap = $('mapSw').checked; applyMapVisibility(); saveSession(); };
 $('splitBendsSw').onchange=()=>{ splitBends = $('splitBendsSw').checked; syncChips(); updateRandCount(); saveSession(); };
 $('nestedSw').onchange=()=>{ allowNesting = $('nestedSw').checked; syncChips(); updateRandCount(); saveSession(); };
-$('halfSw').onchange=()=>{ halfSequence = $('halfSw').checked; setPlaying(false); recompile(); saveSession(); };
+$('seqSel').onchange=()=>{
+  sequenceKey = $('seqSel').value;
+  setPlaying(false); recompile(); updateRandCount(); saveSession();
+};
 $('btnDesc').onclick=()=>{ descCollapsed = !descCollapsed; applyDescCollapsed(); saveSession(); };
 $('btnSeqTab').onclick=()=>{ seqOpen = true; applyDrawers(); saveSession(); };
 $('btnSeqClose').onclick=()=>{ seqOpen = false; applyDrawers(); saveSession(); };
@@ -549,7 +562,8 @@ window.hand = hand;
 window.routine = {
   get compiled(){ return COMPILED; }, sets:SETS, recompile, goto:go,
   play:()=>setPlaying(true), pause:()=>setPlaying(false),
-  validate:()=>validateRoutine(ROUTINE),
+  get sequence(){ return sequenceKey; },
+  validate:()=>validateRoutine(SEQUENCES[sequenceKey].steps),
 };
 
 /* ---------- boot -------------------------------------------- */
@@ -569,7 +583,12 @@ $('crSw').checked = randomizeAtPlay;
 $('mapSw').checked = showMap;
 $('splitBendsSw').checked = splitBends;
 $('nestedSw').checked = allowNesting;
-$('halfSw').checked = halfSequence;
+for(const key of SEQUENCE_KEYS){
+  const opt = document.createElement('option');
+  opt.value = key; opt.textContent = SEQUENCES[key].label;
+  $('seqSel').appendChild(opt);
+}
+$('seqSel').value = sequenceKey;
 applyMapVisibility();
 applyDescCollapsed();
 applyDrawers();

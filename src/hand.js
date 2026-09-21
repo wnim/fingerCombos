@@ -185,15 +185,14 @@ export function createHand(svg, {onStateChange}={}){
       mapLayer.appendChild(sm); SLOTMAP[slot]={s1,s2};
     });
 
-    // digits — the thumb draws even when disabled (just inert/greyed, see
-    // `.digit.inactive`): it isn't part of any slot or set then, but hiding
-    // it entirely reads as a missing digit rather than an optional one.
+    // digits — the thumb draws even when disabled, at full opacity: it
+    // isn't part of any slot or set then, but hiding or fading it reads
+    // as a missing/broken digit rather than an optional one.
     const renderOrder = digitOrder(true);
     renderOrder.forEach(id=>{
       const cfg=DIGIT_TABLE[id], b=lay[id].base, isThumb=cfg.kind==='thumb';
       const w=lay[id].w, L=cfg.len, x=b.x-w/2;
-      const inactive = isThumb && !enableThumb;
-      const g=el('g',{class:'digit'+(inactive?' inactive':''),'data-id':id});
+      const g=el('g',{class:'digit','data-id':id});
 
       const ext=el('g',{class:'extended'});
       const bent=el('g',{class:'bent', opacity:0});
