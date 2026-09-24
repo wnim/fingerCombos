@@ -6,6 +6,8 @@ import {
   compile, membersOf, defaultSets, sanitizeSets, hasIllegalOverlap, hasSiblingSubset, randomSets,
   countPossibleCombinations, serializeSets, parseSetsText,
   SEQUENCES, HALF_NO_SIMUL, ROUTINE_NO_SIMUL, ROUTINE_COMPLETE, ROUTINE_DENSE,
+  emptyPositionRule, isEmptyPositionRule, matchesPositionRule, sanitizePositionRule,
+  describePositionRule, positionRuleEquals,
 } from '../src/core.js';
 
 /* A step is "motionless" if the hand's bends/splits are identical to
@@ -584,7 +586,7 @@ function nonEmptySubsets(universe){
   return out;
 }
 
-function bruteForceCount(order, legalPhysical, allowNesting){
+function bruteForceCount(order, legalPhysical, allowNesting, positionRules=[]){
   const slots = slotsOf(order);
   const bSubsets = nonEmptySubsets(order), sSubsets = nonEmptySubsets(slots);
   let count=0;
@@ -592,7 +594,11 @@ function bruteForceCount(order, legalPhysical, allowNesting){
     for(const S1 of sSubsets) for(const S2 of sSubsets){
       const sets={B1,B2,S1,S2};
       if(!allowNesting && hasSiblingSubset(sets)) continue;
-      if(legalPhysical && compile(sets, order).some(c=>hasIllegalOverlap(c.state.bends, c.state.splits, slots))) continue;
+      if(legalPhysical || positionRules.length){
+        const compiled = compile(sets, order);
+        if(legalPhysical && compiled.some(c=>hasIllegalOverlap(c.state.bends, c.state.splits, slots))) continue;
+        if(positionRules.length && compiled.some(c=>positionRules.some(r=>matchesPositionRule(c.state.bends, c.state.splits, r)))) continue;
+      }
       count++;
     }
   }
@@ -627,7 +633,7 @@ test('countPossibleCombinations shrinks as the toggles get stricter', () => {
 
 /* Enumerate every legal quadruple as a canonical string key, reusing the
    same nonEmptySubsets()/legality checks bruteForceCount already trusts. */
-function bruteForceLegalKeys(order, legalPhysical, allowNesting, keyOf){
+function bruteForceLegalKeys(order, legalPhysical, allowNesting, keyOf, positionRules=[]){
   const slots = slotsOf(order);
   const bSubsets = nonEmptySubsets(order), sSubsets = nonEmptySubsets(slots);
   const keys = new Set();
@@ -635,7 +641,11 @@ function bruteForceLegalKeys(order, legalPhysical, allowNesting, keyOf){
     for(const S1 of sSubsets) for(const S2 of sSubsets){
       const sets={B1,B2,S1,S2};
       if(!allowNesting && hasSiblingSubset(sets)) continue;
-      if(legalPhysical && compile(sets, order).some(c=>hasIllegalOverlap(c.state.bends, c.state.splits, slots))) continue;
+      if(legalPhysical || positionRules.length){
+        const compiled = compile(sets, order);
+        if(legalPhysical && compiled.some(c=>hasIllegalOverlap(c.state.bends, c.state.splits, slots))) continue;
+        if(positionRules.length && compiled.some(c=>positionRules.some(r=>matchesPositionRule(c.state.bends, c.state.splits, r)))) continue;
+      }
       keys.add(keyOf(sets));
     }
   }
@@ -673,5 +683,145 @@ test('randomSets samples uniformly over the exact legal quadruple space', () => 
     assert.ok(count > 0, `legal quadruple never drawn in ${N} tries: ${key}`);
     assert.ok(count > expected/3 && count < expected*3,
       `quadruple ${key} drawn ${count}x, expected ~${expected.toFixed(1)} — looks non-uniform`);
+  }
+});
+
+/* ---- position blacklist -------------------------------------
+   Whole banned-SHAPE rules, matched against the DERIVED {bends,splits}
+   state compile() produces at each step — not raw B1/B2/S1/S2 membership.
+   Each finger/slot is required-on, required-off, or (absent from both
+   lists) a wildcard. */
+
+test('isEmptyPositionRule is true only when all four arrays are empty', () => {
+  assert.ok(isEmptyPositionRule(emptyPositionRule()));
+  assert.ok(!isEmptyPositionRule({...emptyPositionRule(), bendOn:['2']}));
+  assert.ok(!isEmptyPositionRule({...emptyPositionRule(), bendOff:['2']}));
+  assert.ok(!isEmptyPositionRule({...emptyPositionRule(), splitOn:['23']}));
+  assert.ok(!isEmptyPositionRule({...emptyPositionRule(), splitOff:['23']}));
+});
+
+test('a fully-wildcard rule matches every state (which is exactly why it must never persist)', () => {
+  const rule = emptyPositionRule();
+  assert.ok(matchesPositionRule([], [], rule));
+  assert.ok(matchesPositionRule(['1','2','3','4'], ['12','23','34'], rule));
+});
+
+test('matchesPositionRule: a wildcard finger/slot imposes no constraint', () => {
+  const rule = { ...emptyPositionRule(), bendOn:['2'] };
+  assert.ok(matchesPositionRule(['2'], [], rule));
+  assert.ok(matchesPositionRule(['2','3'], ['12','34'], rule), 'extra fingers/slots left wildcard still match');
+  assert.ok(!matchesPositionRule(['3'], [], rule), 'finger 2 absent, so the required-on constraint fails');
+});
+
+test('matchesPositionRule: each of bendOn/bendOff/splitOn/splitOff is checked independently', () => {
+  assert.ok(matchesPositionRule(['2'], [], { ...emptyPositionRule(), bendOn:['2'] }));
+  assert.ok(!matchesPositionRule([], [], { ...emptyPositionRule(), bendOn:['2'] }));
+
+  assert.ok(matchesPositionRule([], [], { ...emptyPositionRule(), bendOff:['2'] }));
+  assert.ok(!matchesPositionRule(['2'], [], { ...emptyPositionRule(), bendOff:['2'] }));
+
+  assert.ok(matchesPositionRule([], ['23'], { ...emptyPositionRule(), splitOn:['23'] }));
+  assert.ok(!matchesPositionRule([], [], { ...emptyPositionRule(), splitOn:['23'] }));
+
+  assert.ok(matchesPositionRule([], [], { ...emptyPositionRule(), splitOff:['23'] }));
+  assert.ok(!matchesPositionRule([], ['23'], { ...emptyPositionRule(), splitOff:['23'] }));
+});
+
+test("matchesPositionRule: the user's example — fingers 2&3 bent with the 23 slot split — only matches when ALL of it holds", () => {
+  const rule = { ...emptyPositionRule(), bendOn:['2','3'], splitOn:['23'] };
+  assert.ok(matchesPositionRule(['2','3'], ['23'], rule));
+  assert.ok(matchesPositionRule(['1','2','3','4'], ['12','23'], rule), 'extra bent fingers/split slots are wildcard, still matches');
+  assert.ok(!matchesPositionRule(['2'], ['23'], rule), 'finger 3 not bent');
+  assert.ok(!matchesPositionRule(['2','3'], [], rule), '23 not split');
+});
+
+test('sanitizePositionRule drops ids that do not exist for the digit order', () => {
+  const order = digitOrder(false);   // no thumb -> 'T' and 'T1' are invalid
+  const rule = sanitizePositionRule({ bendOn:['2','T'], bendOff:[], splitOn:['T1','23'], splitOff:[] }, order);
+  assert.deepEqual(rule, { bendOn:['2'], bendOff:[], splitOn:['23'], splitOff:[] });
+});
+
+test('sanitizePositionRule keeps thumb-referencing ids when the thumb is on', () => {
+  const order = digitOrder(true);
+  const rule = sanitizePositionRule({ bendOn:['T'], bendOff:[], splitOn:['T1'], splitOff:[] }, order);
+  assert.deepEqual(rule, { bendOn:['T'], bendOff:[], splitOn:['T1'], splitOff:[] });
+});
+
+test('sanitizePositionRule resolves an id contradictorily listed as both on and off by keeping "on"', () => {
+  const order = digitOrder(false);
+  const rule = sanitizePositionRule({ bendOn:['2'], bendOff:['2','3'], splitOn:[], splitOff:[] }, order);
+  assert.deepEqual(rule, { bendOn:['2'], bendOff:['3'], splitOn:[], splitOff:[] });
+});
+
+test('sanitizePositionRule returns null once sanitizing leaves nothing (never lets an empty rule persist)', () => {
+  const order = digitOrder(false);
+  assert.equal(sanitizePositionRule({ bendOn:['T'], bendOff:[], splitOn:['T1'], splitOff:[] }, order), null);
+  assert.equal(sanitizePositionRule(null, order), null);
+  assert.equal(sanitizePositionRule({}, order), null);
+});
+
+test('describePositionRule reads as plain English, one clause per non-empty dimension', () => {
+  assert.equal(describePositionRule(emptyPositionRule()), '');
+  assert.equal(describePositionRule({ ...emptyPositionRule(), bendOn:['1','2'] }), '1 & 2 bent');
+  assert.equal(describePositionRule({ ...emptyPositionRule(), bendOff:['1','2'] }), '1 & 2 not bent');
+  assert.equal(
+    describePositionRule({ bendOn:['1','2'], bendOff:[], splitOn:['12','23'], splitOff:[] }),
+    '1 & 2 bent, 12 & 23 split',
+  );
+  assert.equal(
+    describePositionRule({ bendOn:[], bendOff:['1','2'], splitOn:[], splitOff:['12','23'] }),
+    '1 & 2 not bent, 12 & 23 not split',
+  );
+});
+
+test('positionRuleEquals compares content, ignoring array order, not object identity', () => {
+  const a = { bendOn:['2','3'], bendOff:[], splitOn:['23'], splitOff:[] };
+  const b = { bendOn:['3','2'], bendOff:[], splitOn:['23'], splitOff:[] };   // same content, reordered
+  const c = { bendOn:['2'], bendOff:[], splitOn:['23'], splitOff:[] };        // missing '3'
+  assert.ok(positionRuleEquals(a, b));
+  assert.ok(!positionRuleEquals(a, c));
+});
+
+test('countPossibleCombinations with a position rule matches a brute-force count, and never grows the pool', () => {
+  const order = digitOrder(false);
+  const rule = { bendOn:['2','3'], bendOff:[], splitOn:['23'], splitOff:[] };
+  for(const legalPhysical of [true, false]){
+    for(const allowNesting of [true, false]){
+      const withRule = countPossibleCombinations(order, legalPhysical, allowNesting, null, ROUTINE, [rule]);
+      assert.equal(
+        withRule,
+        bruteForceCount(order, legalPhysical, allowNesting, [rule]),
+        `legalPhysical=${legalPhysical} allowNesting=${allowNesting}`,
+      );
+      // With "Split bends" off (legalPhysical=true), splitting the interior
+      // 23 slot while 2 or 3 is bent is already illegal on its own — this
+      // particular rule can coincide entirely with hasIllegalOverlap, so
+      // only <= holds in general; the pool must never GROW from adding a rule.
+      const withoutRule = countPossibleCombinations(order, legalPhysical, allowNesting);
+      assert.ok(withRule <= withoutRule, `legalPhysical=${legalPhysical} allowNesting=${allowNesting}`);
+    }
+  }
+});
+
+test('countPossibleCombinations: a position rule strictly shrinks the pool when the shape it bans is otherwise legal', () => {
+  // With "Split bends" ON (legalPhysical=false), "2&3 bent + 23 split" is
+  // otherwise a perfectly legal combination — banning it as a position
+  // must visibly shrink the count, not just match brute-force.
+  const order = digitOrder(false);
+  const rule = { bendOn:['2','3'], bendOff:[], splitOn:['23'], splitOff:[] };
+  for(const allowNesting of [true, false]){
+    const withRule = countPossibleCombinations(order, false, allowNesting, null, ROUTINE, [rule]);
+    const withoutRule = countPossibleCombinations(order, false, allowNesting);
+    assert.ok(withRule < withoutRule, `allowNesting=${allowNesting}`);
+  }
+});
+
+test('randomSets with a position rule never returns a quadruple whose compiled playback matches it', () => {
+  const order = digitOrder(false);
+  const rule = { bendOn:['2','3'], bendOff:[], splitOn:['23'], splitOff:[] };
+  for(const seed of [1,2,3,4,5]){
+    const sets = randomSets(order, true, false, mulberry32(seed), null, ROUTINE, [rule]);
+    const hit = compile(sets, order).some(c=>matchesPositionRule(c.state.bends, c.state.splits, rule));
+    assert.ok(!hit, `seed ${seed}: randomSets produced a banned shape — ${serializeSets(sets, order)}`);
   }
 });

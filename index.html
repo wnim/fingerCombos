@@ -24,7 +24,7 @@
     <button class="tbtn" id="btnPrev" title="Previous">◀</button>
     <button class="tbtn play" id="btnPlay" title="Play/pause"></button>
     <button class="tbtn" id="btnNext" title="Next">▶▏</button>
-    <span class="tempo">slow<input type="range" id="tempo" min="180" max="1200" step="20" value="640">fast</span>
+    <span class="tempo">slow<input type="range" id="tempo" min="180" max="1800" step="20" value="640">fast</span>
   </div>
 </div>
 
@@ -116,6 +116,43 @@
     </div>
   </div>
   <p class="hint">Shift+click a finger or slot to blacklist it — excluded from Randomize sets.</p>
+  <button class="linkbtn" id="btnPosRules" type="button">Blacklist a hand position…</button>
+</div>
+
+<div class="modalbackdrop" id="posModalBackdrop" hidden></div>
+<div class="modal" id="posModal" role="dialog" aria-modal="true" aria-labelledby="posModalTitle" hidden>
+  <div class="panelhead">
+    <h2 class="sechead" id="posModalTitle">Blacklist a hand position</h2>
+    <button class="closebtn" id="btnPosModalClose" type="button" aria-label="Close" title="Close"></button>
+  </div>
+  <p class="sub">Every chip starts neutral — a wildcard, meaning that finger/slot can do
+    anything. Click a chip to cycle it: wildcard → must be → must NOT be → back to wildcard.
+    Any playback step matching every non-wildcard chip below is excluded from Randomize sets
+    and the combination count — manual chip-building is unaffected.</p>
+
+  <div class="setrow"><span class="setlab bend">Bend</span><div class="chips" id="posBendChips"></div></div>
+  <div class="setrow"><span class="setlab split">Split</span><div class="chips" id="posSplitChips"></div></div>
+  <p class="hint" id="posDraftSummary">Pick at least one chip above to start a rule.</p>
+
+  <div class="row" title="Add this rule to just the current hand, or to both sides at once">
+    <label>Apply to</label>
+    <div class="seg" id="posApplyTo">
+      <button type="button" class="segbtn on" data-val="this">This hand</button>
+      <button type="button" class="segbtn" data-val="both">Both hands</button>
+    </div>
+  </div>
+
+  <button class="randbtn" id="btnPosAdd" type="button" disabled>Add rule</button>
+
+  <h2 class="sechead">Existing rules</h2>
+  <div class="poslist" id="posRuleList"></div>
+
+  <div class="poslegend">
+    <span class="legenditem"><span class="chip posbuild swatch"></span>wildcard — don't care</span>
+    <span class="legenditem"><span class="chip posbuild reqon bendctx swatch"></span>must bend</span>
+    <span class="legenditem"><span class="chip posbuild reqon splitctx swatch"></span>must split</span>
+    <span class="legenditem"><span class="chip posbuild reqoff swatch"></span>must NOT (bend/split)</span>
+  </div>
 </div>
 
 <script type="module" src="src/app.js"></script>

@@ -307,12 +307,15 @@ function randomQuadruple(order, slots, rng, blacklist){
    sums over the whole space. Runs compile() once per candidate (fine —
    randomSets only ever tests one candidate at a time, unlike
    countPossibleCombinations which must check every candidate). */
-function isLegalQuadruple(sets, order, legalPhysical, allowNesting, routine){
+function isLegalQuadruple(sets, order, legalPhysical, allowNesting, routine, positionRules = []){
   if(!allowNesting && hasSiblingSubset(sets)) return false;
+  if(!legalPhysical && !positionRules.length) return true;
+  const compiled = compile(sets, order, routine);
   if(legalPhysical){
     const slots = slotsOf(order);
-    if(compile(sets, order, routine).some(c=>hasIllegalOverlap(c.state.bends, c.state.splits, slots))) return false;
+    if(compiled.some(c=>hasIllegalOverlap(c.state.bends, c.state.splits, slots))) return false;
   }
+  if(positionRules.length && compiled.some(c=>positionRules.some(r=>matchesPositionRule(c.state.bends, c.state.splits, r)))) return false;
   return true;
 }
 
@@ -324,11 +327,11 @@ function isLegalQuadruple(sets, order, legalPhysical, allowNesting, routine){
    the unlucky tail, since each attempt is just one compile() call. */
 const MAX_RANDOM_TRIES = 5000;
 
-export function randomSets(order, legalPhysical, allowNesting = false, rng = Math.random, blacklist = null, routine = ROUTINE){
+export function randomSets(order, legalPhysical, allowNesting = false, rng = Math.random, blacklist = null, routine = ROUTINE, positionRules = []){
   const slots = slotsOf(order);
   for(let i=0;i<MAX_RANDOM_TRIES;i++){
     const candidate = randomQuadruple(order, slots, rng, blacklist);
-    if(isLegalQuadruple(candidate, order, legalPhysical, allowNesting, routine)) return candidate;
+    if(isLegalQuadruple(candidate, order, legalPhysical, allowNesting, routine, positionRules)) return candidate;
   }
   return randomQuadruple(order, slots, rng, blacklist);   // ~2.6e-11 chance; see MAX_RANDOM_TRIES above
 }
@@ -345,7 +348,7 @@ export function randomSets(order, legalPhysical, allowNesting = false, rng = Mat
    or their union — depending on which of the pair is active at that
    step (fixed by the routine, independent of set contents), which is
    what the bitmask OR-in-if pattern below is exploiting.           */
-export function countPossibleCombinations(order, legalPhysical, allowNesting, blacklist = null, routine = ROUTINE){
+export function countPossibleCombinations(order, legalPhysical, allowNesting, blacklist = null, routine = ROUTINE, positionRules = []){
   const slots = slotsOf(order);
   const n = order.length, m = slots.length;
   const borderMask = slots.map((s, j) => {
@@ -368,6 +371,16 @@ export function countPossibleCombinations(order, legalPhysical, allowNesting, bl
   const blackB = blacklist ? order.reduce((mask,id,i)=>blacklist.B?.has(id)?mask|(1<<i):mask, 0) : 0;
   const blackS = blacklist ? slots.reduce((mask,id,i)=>blacklist.S?.has(id)?mask|(1<<i):mask, 0) : 0;
 
+  // Each position rule as four bitmasks, encoded the same way blackB/blackS
+  // are — iterating order/slots and testing membership — so a stray id that
+  // slipped past sanitization can't corrupt the mask via indexOf's -1.
+  const ruleMasks = positionRules.map(r => ({
+    bendOnMask:   order.reduce((mask,id,i)=>r.bendOn.includes(id)  ?mask|(1<<i):mask, 0),
+    bendOffMask:  order.reduce((mask,id,i)=>r.bendOff.includes(id) ?mask|(1<<i):mask, 0),
+    splitOnMask:  slots.reduce((mask,id,i)=>r.splitOn.includes(id) ?mask|(1<<i):mask, 0),
+    splitOffMask: slots.reduce((mask,id,i)=>r.splitOff.includes(id)?mask|(1<<i):mask, 0),
+  }));
+
   const maxB=(1<<n)-1, maxS=(1<<m)-1;
   let count=0;
   for(let B1=1; B1<=maxB; B1++){
@@ -380,13 +393,21 @@ export function countPossibleCombinations(order, legalPhysical, allowNesting, bl
         for(let S2=1; S2<=maxS; S2++){
           if(S2 & blackS) continue;
           if(!allowNesting && S1===S2) continue;
-          if(legalPhysical){
+          if(legalPhysical || ruleMasks.length){
             let illegal=false;
             for(const st of steps){
               const bends=(st.b1?B1:0)|(st.b2?B2:0);
               const splits=(st.s1?S1:0)|(st.s2?S2:0);
-              for(let j=0;j<m;j++){
-                if((splits&(1<<j)) && (borderMask[j]&bends)){ illegal=true; break; }
+              if(legalPhysical){
+                for(let j=0;j<m;j++){
+                  if((splits&(1<<j)) && (borderMask[j]&bends)){ illegal=true; break; }
+                }
+              }
+              if(!illegal){
+                for(const r of ruleMasks){
+                  if((bends&r.bendOnMask)===r.bendOnMask && !(bends&r.bendOffMask) &&
+                     (splits&r.splitOnMask)===r.splitOnMask && !(splits&r.splitOffMask)){ illegal=true; break; }
+                }
               }
               if(illegal) break;
             }
@@ -407,6 +428,81 @@ export function countPossibleCombinations(order, legalPhysical, allowNesting, bl
 export const defaultSets = () => ({
   B1:new Set(['1','2']), B2:new Set(['3']), S1:new Set(['34']), S2:new Set(['12']),
 });
+
+/* ---- position blacklist ------------------------------------
+   A "position" rule is a partial, wildcard-able hand SHAPE — not raw
+   B1/B2/S1/S2 membership, but the DERIVED {bends, splits} state compile()
+   produces at each step of a playing routine. Each finger/slot is one of
+   three states: required ON (must be bent/split), required OFF (must not
+   be), or — if absent from both lists — a wildcard that imposes nothing.
+   Plain id arrays, not Sets, so a rule round-trips through JSON as-is. */
+export function emptyPositionRule(){
+  return { bendOn:[], bendOff:[], splitOn:[], splitOff:[] };
+}
+
+/* A rule with all four arrays empty is pure wildcard — it would match
+   EVERY possible state, which would make randomSets reject every
+   candidate and always fall back past MAX_RANDOM_TRIES. Must never be
+   allowed to persist; checked both at add-time (disables the "Add rule"
+   button) and at sanitize/load-time (a rule can go empty after the thumb
+   drops its one remaining constrained digit). */
+export function isEmptyPositionRule(rule){
+  return !rule.bendOn.length && !rule.bendOff.length && !rule.splitOn.length && !rule.splitOff.length;
+}
+
+/* bends/splits may be a Set or a plain array — compile() produces arrays
+   (see union() below), hasIllegalOverlap already has to handle the same
+   ambiguity for `bends`. */
+export function matchesPositionRule(bends, splits, rule){
+  const bentSet = bends instanceof Set ? bends : new Set(bends);
+  const splitSet = splits instanceof Set ? splits : new Set(splits);
+  return rule.bendOn.every(id=>bentSet.has(id))
+      && rule.bendOff.every(id=>!bentSet.has(id))
+      && rule.splitOn.every(id=>splitSet.has(id))
+      && rule.splitOff.every(id=>!splitSet.has(id));
+}
+
+/* Coerce arbitrary/stored rule data into a valid rule for this digit
+   order, or null if nothing usable survives — mirrors sanitizeSets /
+   app.js's sanitizeBlacklistSide. An id contradictorily listed as both
+   required-on and required-off can't come from the builder UI (its chips
+   cycle through one state at a time) but could come from corrupted or
+   hand-edited storage; resolve it by keeping "on" and dropping "off". */
+/* Plain-English reading of a rule — e.g. "1 & 2 bent, 12 & 23 split" — so
+   a rule can be sanity-checked by its meaning instead of by decoding chip
+   colors/ids. Returns '' for a fully-wildcard rule; the caller supplies
+   its own "nothing picked yet" fallback text. */
+export function describePositionRule(rule){
+  const clause = (ids, verb) => ids.length ? `${ids.join(' & ')} ${verb}` : null;
+  return [
+    clause(rule.bendOn, 'bent'),
+    clause(rule.bendOff, 'not bent'),
+    clause(rule.splitOn, 'split'),
+    clause(rule.splitOff, 'not split'),
+  ].filter(Boolean).join(', ');
+}
+
+/* Order-independent content equality — used to tell whether a rule that
+   exists on one hand side also exists (independently) on the other, since
+   "apply to both hands" stores two separate cloned entries rather than one
+   shared one. */
+export function positionRuleEquals(a, b){
+  const sameSet = (x,y) => x.length===y.length && x.every(id=>y.includes(id));
+  return sameSet(a.bendOn,b.bendOn) && sameSet(a.bendOff,b.bendOff)
+      && sameSet(a.splitOn,b.splitOn) && sameSet(a.splitOff,b.splitOff);
+}
+
+export function sanitizePositionRule(raw, order){
+  const validB = new Set(order), validS = new Set(slotsOf(order));
+  const clean = (v, valid) => (Array.isArray(v) ? v : []).map(String).filter(x=>valid.has(x));
+  const bendOn = clean(raw?.bendOn, validB), splitOn = clean(raw?.splitOn, validS);
+  const rule = {
+    bendOn, splitOn,
+    bendOff: clean(raw?.bendOff, validB).filter(id=>!bendOn.includes(id)),
+    splitOff: clean(raw?.splitOff, validS).filter(id=>!splitOn.includes(id)),
+  };
+  return isEmptyPositionRule(rule) ? null : rule;
+}
 
 /* Coerce arbitrary set data into a valid {B1,B2,S1,S2} for this digit
    order, dropping members that don't exist. One place handles both jobs

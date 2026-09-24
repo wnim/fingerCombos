@@ -243,6 +243,65 @@ h1{font-size:17px;margin:0 0 2px;letter-spacing:-.01em}
 .seqsel{flex:0 0 auto;font-size:13px;color:var(--ink);background:var(--surface);
         border:1.5px solid var(--line);border-radius:10px;padding:7px 9px;cursor:pointer}
 .seqsel:focus{outline:none;border-color:var(--scroll-thumb)}
+/* position-blacklist trigger — deliberately unobtrusive (a plain text
+   link, not a button) so the popup it opens can hold all the complexity
+   without cluttering this panel. */
+.linkbtn{display:block;border:0;background:none;color:var(--muted);font-size:11px;
+         text-decoration:underline;cursor:pointer;padding:0;margin:6px 0 0}
+.linkbtn:hover{color:var(--ink)}
+
+/* position-blacklist popup — the only modal/backdrop in the app. Chosen
+   over a third edge-docked drawer because its trigger only lives inside
+   .panel (so panelOpen is already true when it's reachable) and because
+   the builder's chip grid + "current" rule list both depend on the
+   thumb/hand-side/sequence staying fixed while a rule is composed — a
+   full-viewport backdrop above both drawers makes that a certainty
+   instead of something to special-case. */
+.modalbackdrop{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.45)}
+.modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:41;
+       width:380px;max-width:90vw;max-height:88vh;overflow-y:auto;
+       background:var(--panel);border:1px solid var(--line);border-radius:14px;
+       padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+
+.setlab.bend{background:var(--bend)}
+.setlab.split{background:var(--split)}
+
+/* tri-state builder chip: dashed border (the .posbuild default) = wildcard;
+   filled with the generic bend/split state color = required ON; the
+   established black/strikethrough "excluded" look (see .chip.blacklisted)
+   = required OFF. bendctx/splitctx pick which color "on" uses. */
+.chip.posbuild{border-style:dashed}
+.chip.posbuild.reqon.bendctx{background:var(--bend);border-color:var(--bend);border-style:solid;color:#fff}
+.chip.posbuild.reqon.splitctx{background:var(--split);border-color:var(--split);border-style:solid;color:#fff}
+.chip.posbuild.reqoff{background:#000;border-color:#000;border-style:solid;color:#8a8a8a;text-decoration:line-through}
+/* a "must NOT" chip is black regardless of dimension, so it still gets a
+   colored ring matching bend/split — a second cue beyond the Bend/Split
+   group label, for telling "finger 2 must not bend" apart from "slot 23
+   must not split" at a glance. */
+.chip.posbuild.reqoff.bendctx{border-color:var(--bend)}
+.chip.posbuild.reqoff.splitctx{border-color:var(--split)}
+
+.seg{display:flex;gap:6px}
+.segbtn{border:1.5px solid var(--line);background:var(--surface);color:var(--ink);
+        border-radius:8px;padding:6px 10px;font-size:12.5px;cursor:pointer;transition:.13s}
+.segbtn.on{background:var(--switch-on);border-color:var(--switch-on);color:#fff}
+
+.poslist{display:flex;flex-direction:column;gap:6px;margin:0 0 4px}
+.posrule{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.posrulebody{display:flex;flex-direction:column;gap:5px;flex:1;min-width:0}
+.posrulecaption{font-size:12px;color:var(--ink)}
+.handtag{color:var(--muted);font-size:11px;font-weight:600;white-space:nowrap}
+.posrulegroup{display:flex;align-items:center;gap:6px}
+.setlab.mini{font-size:9px;padding:2px 5px;min-width:0;flex:0 0 auto}
+.posrule .chips{gap:4px}
+.posrule .chip{padding:3px 7px;font-size:11px;min-width:0;cursor:default}
+.posrule .rmbtn{margin-left:auto;flex:0 0 auto}
+
+.poslegend{display:flex;flex-wrap:wrap;gap:10px 16px;margin:14px 0 0;padding-top:12px;
+           border-top:1px solid var(--line);color:var(--muted);font-size:11.5px}
+.legenditem{display:flex;align-items:center;gap:6px}
+.chip.swatch{padding:0;width:20px;height:20px;min-width:0;border-radius:6px;cursor:default}
+
 .setgroup{margin:0 0 9px}
 .setgroup .setrow{margin:0 0 4px}
 .setwarn{color:var(--err-text);font-size:11px;margin:0 0 5px 36px}

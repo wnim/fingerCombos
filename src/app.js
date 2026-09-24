@@ -6,7 +6,8 @@
 import {
   SEQUENCES, SET_KEYS, digitOrder, slotsOf, validateRoutine, compile, defaultSets, sanitizeSets,
   hasIllegalOverlap, hasSiblingSubset, subsumes, setsEqual, randomSets, countPossibleCombinations,
-  serializeSets, parseSetsText,
+  serializeSets, parseSetsText, sanitizePositionRule, isEmptyPositionRule, emptyPositionRule,
+  describePositionRule, positionRuleEquals,
 } from './core.js';
 import { createHand } from './hand.js';
 
@@ -54,6 +55,10 @@ function saveSession(){
         left: { B:[...BLACKLIST.left.B], S:[...BLACKLIST.left.S] },
         right: { B:[...BLACKLIST.right.B], S:[...BLACKLIST.right.S] },
       },
+      positionBlacklist: {
+        left: POSITION_BLACKLIST.left,
+        right: POSITION_BLACKLIST.right,
+      },
       tempoValue: +$('tempo').value,
     }));
   }catch{ /* storage unavailable — the app still works, just forgets */ }
@@ -69,6 +74,15 @@ function sanitizeBlacklistSide(raw, order){
     B: new Set(list(raw?.B).map(String).filter(x=>validB.has(x))),
     S: new Set(list(raw?.S).map(String).filter(x=>validS.has(x))),
   };
+}
+
+/* Position-blacklist counterpart to sanitizeBlacklistSide: coerce a stored
+   array of rules into valid ones for the current digit order, dropping any
+   that don't survive (see sanitizePositionRule in core.js). */
+function sanitizePositionRulesSide(raw, order){
+  return (Array.isArray(raw) ? raw : [])
+    .map(r => sanitizePositionRule(r, order))
+    .filter(Boolean);
 }
 
 function loadSession(){
@@ -107,8 +121,12 @@ function loadSession(){
       left: sanitizeBlacklistSide(d.blacklist?.left, order),
       right: sanitizeBlacklistSide(d.blacklist?.right, order),
     };
+    const positionBlacklist = {
+      left: sanitizePositionRulesSide(d.positionBlacklist?.left, order),
+      right: sanitizePositionRulesSide(d.positionBlacklist?.right, order),
+    };
     const tempoValue = Number.isFinite(d.tempoValue) ? d.tempoValue : null;
-    return {thumb, rightHand, darkMode, loop, randomizeAtPlay, showMap, splitBends, allowNesting, sequence, descCollapsed, seqOpen, panelOpen, sets, blacklist, tempoValue};
+    return {thumb, rightHand, darkMode, loop, randomizeAtPlay, showMap, splitBends, allowNesting, sequence, descCollapsed, seqOpen, panelOpen, sets, blacklist, positionBlacklist, tempoValue};
   }catch{ return null; }
 }
 
@@ -123,11 +141,17 @@ const SETS = restored?.sets ?? defaultSets();
    both B1 and B2 (they share the same finger universe); same for S1/S2
    and slots. */
 const BLACKLIST = restored?.blacklist ?? { left:{B:new Set(), S:new Set()}, right:{B:new Set(), S:new Set()} };
+/* Banned hand SHAPES (see docs on matchesPositionRule in core.js), also
+   kept per hand side and switched the same way as BLACKLIST. Unlike
+   BLACKLIST, each entry is a whole {bendOn,bendOff,splitOn,splitOff} rule
+   rather than a single member, built via the position-blacklist popup. */
+const POSITION_BLACKLIST = restored?.positionBlacklist ?? { left:[], right:[] };
 
 const hand = createHand($('hand'), { onStateChange: s => { $('thumbSw').checked = s.thumb; } });
 
 let rightHand = restored?.rightHand ?? false;
 const blacklistSide = () => BLACKLIST[rightHand ? 'right' : 'left'];
+const positionRulesSide = () => POSITION_BLACKLIST[rightHand ? 'right' : 'left'];
 let darkMode = restored?.darkMode ?? false;
 let loop = restored?.loop ?? true;
 let randomizeAtPlay = restored?.randomizeAtPlay ?? true;
@@ -140,11 +164,17 @@ let seqOpen = restored?.seqOpen ?? false;
 let panelOpen = restored?.panelOpen ?? false;
 let COMPILED=[], p=-1, playing=false, timer=null, loopTimer=null, tempo=0;
 
-/* The set map is a static reference overlay — useful while composing sets,
-   noise while the hand is actually moving. So its DOM visibility tracks
-   both the user's toggle AND playback, even though only the toggle is
-   persisted. */
-function applyMapVisibility(){ hand.showMap(showMap && !playing); }
+/* ---- position-blacklist popup: transient (never persisted — the modal
+   always starts closed and the in-progress rule always starts blank). ---- */
+let posModalOpen = false;
+let posDraft = emptyPositionRule();
+let posApplyBoth = false;
+
+/* The set map is a static reference overlay — useful before the sequence
+   starts, noise once you're anywhere inside it (move 1 onward), playing
+   or paused. So its DOM visibility tracks both the user's toggle AND the
+   sequence position, even though only the toggle is persisted. */
+function applyMapVisibility(){ hand.showMap(showMap && p<0); }
 
 function applyDescCollapsed(){
   $('sub').classList.toggle('collapsed', descCollapsed);
@@ -187,6 +217,7 @@ function recompile(){
 
 function show(){
   hand.setState(stateAt(p));
+  applyMapVisibility();
   [...seqbox.children].forEach((r,i)=>r.classList.toggle('cur', i===p));
   if(p>=0){
     revealRow(p);
@@ -211,7 +242,7 @@ function tick(){
   if(!playing) return;
   if(p>=COMPILED.length-1){
     if(!loop){ setPlaying(false); return; }   // stop, don't wrap
-    setPlaying(false); loopAdvance(); return;  // loop: pause on the set map, then wrap
+    setPlaying(false); loopAdvance(); return;  // loop: pause at the end, then wrap
   }
   stepBy(1);
   timer=setTimeout(tick, tempo);
@@ -235,7 +266,7 @@ function setPlaying(on){
   if(on){ if(p>=COMPILED.length-1) p=-1; tick(); }
 }
 
-/* End of a loop pass: pause 2s on the set map — reading it needs the
+/* End of a loop pass: pause 2s on the final pose — reading it needs the
    pause whether or not the sets just changed — randomizing first when
    "Randomize at play" is on. Only ever called while not currently
    playing (see tick), so it never races the hand's own playback
@@ -267,7 +298,7 @@ function renderSeq(){
 
 /* ---- tempo: the slider reads as SPEED, so ms = span - value.
    Derived from the DOM at boot so the two can't drift apart.   */
-const TEMPO_SPAN=1380;
+const TEMPO_SPAN=1980;
 function readTempo(){ tempo = TEMPO_SPAN - (+$('tempo').value); }
 
 /* ---- set-membership chips ---------------------------------- */
@@ -417,7 +448,7 @@ function syncChips(){
    chosen), so it's recomputed on those changes rather than every click. */
 function updateRandCount(){
   const order = digitOrder(hand.state.thumb);
-  const n = countPossibleCombinations(order, !splitBends, allowNesting, blacklistSide(), SEQUENCES[sequenceKey].steps);
+  const n = countPossibleCombinations(order, !splitBends, allowNesting, blacklistSide(), SEQUENCES[sequenceKey].steps, positionRulesSide());
   $('randCount').textContent = `(${n.toLocaleString()} combinations)`;
 }
 
@@ -426,7 +457,7 @@ function updateRandCount(){
    is a no-op — both filters are enforced inside randomSets itself. */
 function randomizeSets(){
   const order = digitOrder(hand.state.thumb);
-  const next = randomSets(order, !splitBends, allowNesting, Math.random, blacklistSide(), SEQUENCES[sequenceKey].steps);
+  const next = randomSets(order, !splitBends, allowNesting, Math.random, blacklistSide(), SEQUENCES[sequenceKey].steps, positionRulesSide());
   for(const key of SET_KEYS) SETS[key] = next[key];
   recompile(); saveSession();
 }
@@ -463,6 +494,167 @@ function loadSetsFromInput(){
   input.value='';
 }
 
+/* ---- position blacklist: ban whole hand SHAPES ---------------
+   A separate, independent denylist from BLACKLIST above — it doesn't
+   remove members from the draw pool, it rejects whole {B1,B2,S1,S2}
+   candidates whose compiled playback ever matches a banned shape (see
+   matchesPositionRule in core.js). Scoped to the randomizer/counter only,
+   exactly like BLACKLIST — manual chip-building is untouched. Composed in
+   its own modal so the thumb/hand-side/sequence (which the builder's
+   chip grid and "current" rule list both depend on) can't change out
+   from under a rule mid-edit — the backdrop blocks the rest of the page
+   while it's open. */
+
+function cloneRule(r){
+  return { bendOn:[...r.bendOn], bendOff:[...r.bendOff], splitOn:[...r.splitOn], splitOff:[...r.splitOff] };
+}
+
+// wildcard -> required-on -> required-off -> wildcard
+function cyclePosState(onList, offList, id){
+  const oi=onList.indexOf(id), fi=offList.indexOf(id);
+  if(oi!==-1){ onList.splice(oi,1); offList.push(id); }
+  else if(fi!==-1){ offList.splice(fi,1); }
+  else onList.push(id);
+}
+
+function posChipState(onList, offList, id){
+  return onList.includes(id) ? 'reqon' : offList.includes(id) ? 'reqoff' : '';
+}
+
+function buildPositionBuilderChips(){
+  const order=digitOrder(hand.state.thumb), slots=slotsOf(order);
+  const bendBox=$('posBendChips'), splitBox=$('posSplitChips');
+  bendBox.innerHTML=''; splitBox.innerHTML='';
+  order.forEach(id=>{
+    const c=document.createElement('div');
+    c.className=`chip posbuild bendctx ${posChipState(posDraft.bendOn, posDraft.bendOff, id)}`.trim();
+    c.textContent=id;
+    c.title='Click to cycle: wildcard → must bend → must NOT bend';
+    c.onclick=()=>{ cyclePosState(posDraft.bendOn, posDraft.bendOff, id); buildPositionBuilderChips(); };
+    bendBox.appendChild(c);
+  });
+  slots.forEach(id=>{
+    const c=document.createElement('div');
+    c.className=`chip posbuild splitctx ${posChipState(posDraft.splitOn, posDraft.splitOff, id)}`.trim();
+    c.textContent=id;
+    c.title='Click to cycle: wildcard → must split → must NOT split';
+    c.onclick=()=>{ cyclePosState(posDraft.splitOn, posDraft.splitOff, id); buildPositionBuilderChips(); };
+    splitBox.appendChild(c);
+  });
+  $('btnPosAdd').disabled = isEmptyPositionRule(posDraft);
+  const desc = describePositionRule(posDraft);
+  $('posDraftSummary').textContent = desc ? `Banned when: ${desc}.` : 'Pick at least one chip above to start a rule.';
+}
+
+/* Rules are stored per hand side (see POSITION_BLACKLIST), and "apply to
+   both hands" stores two independent clones rather than one shared entry
+   — there is no stored link between them. Rendering the two sides as two
+   separately-labeled lists ("Existing rules — left hand") read as a
+   contradiction the moment a row inside it said "(both hands)". Instead,
+   merge left+right into ONE list here, content-matching a left rule
+   against its right-side twin (if any) via positionRuleEquals, so each
+   rule appears exactly once with an honest "left/right/both hands" tag —
+   regardless of which hand happens to be active in the main panel. */
+function mergedPositionRules(){
+  const usedRight = new Set();
+  const merged = POSITION_BLACKLIST.left.map((rule, li) => {
+    const ri = POSITION_BLACKLIST.right.findIndex((r,idx)=>!usedRight.has(idx) && positionRuleEquals(r, rule));
+    if(ri!==-1) usedRight.add(ri);
+    return { rule, li, ri: ri===-1 ? null : ri };
+  });
+  POSITION_BLACKLIST.right.forEach((rule, ri) => {
+    if(!usedRight.has(ri)) merged.push({ rule, li:null, ri });
+  });
+  return merged;
+}
+
+function renderPositionRuleList(){
+  const order=digitOrder(hand.state.thumb), slots=slotsOf(order);
+  const box=$('posRuleList');
+  box.innerHTML='';
+  const merged = mergedPositionRules();
+  if(!merged.length){
+    box.innerHTML='<p class="hint">No banned positions yet.</p>';
+    return;
+  }
+  /* The plain-English caption is the primary way to read a rule; the
+     labeled Bend/Split chip rows underneath are a secondary, at-a-glance
+     reference once you know the notation. */
+  merged.forEach(({rule, li, ri})=>{
+    const row=document.createElement('div'); row.className='posrule';
+    const body=document.createElement('div'); body.className='posrulebody';
+
+    const caption=document.createElement('div'); caption.className='posrulecaption';
+    const handTagText = li!=null && ri!=null ? 'both hands' : li!=null ? 'left hand only' : 'right hand only';
+    caption.textContent = `Banned when: ${describePositionRule(rule)}. `;
+    const handTag=document.createElement('span'); handTag.className='handtag'; handTag.textContent=`(${handTagText})`;
+    caption.appendChild(handTag);
+    body.appendChild(caption);
+
+    const bendIds = order.filter(id=>posChipState(rule.bendOn, rule.bendOff, id));
+    const splitIds = slots.filter(id=>posChipState(rule.splitOn, rule.splitOff, id));
+
+    const addGroup = (label, cls, ids, onList, offList) => {
+      if(!ids.length) return;
+      const grp=document.createElement('div'); grp.className='posrulegroup';
+      const lab=document.createElement('span'); lab.className=`setlab mini ${cls}`; lab.textContent=label;
+      const chips=document.createElement('div'); chips.className='chips';
+      ids.forEach(id=>{
+        const c=document.createElement('div');
+        c.className=`chip posbuild ${cls}ctx ${posChipState(onList, offList, id)}`;
+        c.textContent=id;
+        chips.appendChild(c);
+      });
+      grp.appendChild(lab); grp.appendChild(chips);
+      body.appendChild(grp);
+    };
+    addGroup('Bend', 'bend', bendIds, rule.bendOn, rule.bendOff);
+    addGroup('Split', 'split', splitIds, rule.splitOn, rule.splitOff);
+
+    const rm=document.createElement('button');
+    rm.className='closebtn rmbtn'; rm.type='button'; rm.title='Remove this rule';
+    rm.innerHTML=ICON_CLOSE;
+    rm.onclick=()=>{
+      if(li!=null) POSITION_BLACKLIST.left.splice(li,1);
+      if(ri!=null) POSITION_BLACKLIST.right.splice(ri,1);
+      renderPositionRuleList(); updateRandCount(); saveSession();
+    };
+    row.appendChild(body); row.appendChild(rm);
+    box.appendChild(row);
+  });
+}
+
+function openPositionRuleModal(){
+  posDraft=emptyPositionRule(); posApplyBoth=false;
+  $('posApplyTo').querySelectorAll('.segbtn').forEach(b=>b.classList.toggle('on', b.dataset.val==='this'));
+  $('posApplyTo').querySelector('[data-val="this"]').textContent = `This hand (${rightHand ? 'right' : 'left'})`;
+  buildPositionBuilderChips();
+  renderPositionRuleList();
+  posModalOpen=true;
+  $('posModalBackdrop').hidden=false;
+  $('posModal').hidden=false;
+}
+
+function closePositionRuleModal(){
+  posModalOpen=false;
+  $('posModalBackdrop').hidden=true;
+  $('posModal').hidden=true;
+}
+
+function addPositionRule(){
+  if(isEmptyPositionRule(posDraft)) return;
+  if(posApplyBoth){
+    POSITION_BLACKLIST.left.push(cloneRule(posDraft));
+    POSITION_BLACKLIST.right.push(cloneRule(posDraft));
+  } else {
+    positionRulesSide().push(cloneRule(posDraft));
+  }
+  posDraft=emptyPositionRule();
+  buildPositionBuilderChips();
+  renderPositionRuleList();
+  updateRandCount(); saveSession();
+}
+
 /* ---- wiring ------------------------------------------------- */
 $('thumbSw').onchange=()=>{
   hand.enableThumb($('thumbSw').checked);
@@ -470,6 +662,8 @@ $('thumbSw').onchange=()=>{
   Object.assign(SETS, sanitizeSets(SETS, order));
   BLACKLIST.left = sanitizeBlacklistSide(BLACKLIST.left, order);
   BLACKLIST.right = sanitizeBlacklistSide(BLACKLIST.right, order);
+  POSITION_BLACKLIST.left = sanitizePositionRulesSide(POSITION_BLACKLIST.left, order);
+  POSITION_BLACKLIST.right = sanitizePositionRulesSide(POSITION_BLACKLIST.right, order);
   buildSetChips(); recompile(); updateRandCount(); saveSession();
 };
 $('handSw').onchange=()=>{
@@ -503,6 +697,16 @@ $('btnSeqTab').onclick=()=>{ seqOpen = true; applyDrawers(); saveSession(); };
 $('btnSeqClose').onclick=()=>{ seqOpen = false; applyDrawers(); saveSession(); };
 $('btnPanelTab').onclick=()=>{ panelOpen = true; applyDrawers(); saveSession(); };
 $('btnPanelClose').onclick=()=>{ panelOpen = false; applyDrawers(); saveSession(); };
+$('btnPosRules').onclick = openPositionRuleModal;
+$('btnPosModalClose').onclick = closePositionRuleModal;
+$('posModalBackdrop').onclick = closePositionRuleModal;
+$('btnPosAdd').onclick = addPositionRule;
+$('posApplyTo').querySelectorAll('.segbtn').forEach(b=>{
+  b.onclick = ()=>{
+    posApplyBoth = b.dataset.val==='both';
+    $('posApplyTo').querySelectorAll('.segbtn').forEach(x=>x.classList.toggle('on', x===b));
+  };
+});
 $('btnRandom').onclick=randomizeSets;
 $('btnCopySets').onclick=copySetsText;
 $('setsInput').addEventListener('keydown', e=>{
@@ -529,7 +733,9 @@ document.addEventListener('keydown', e=>{
 });
 
 document.addEventListener('keydown', e=>{
-  if(e.key!=='Escape' || (!seqOpen && !panelOpen)) return;
+  if(e.key!=='Escape') return;
+  if(posModalOpen){ closePositionRuleModal(); return; }
+  if(!seqOpen && !panelOpen) return;
   seqOpen=false; panelOpen=false;
   applyDrawers(); saveSession();
 });
