@@ -266,14 +266,16 @@ function setPlaying(on){
   if(on){ if(p>=COMPILED.length-1) p=-1; tick(); }
 }
 
-/* End of a loop pass: pause 2s on the final pose — reading it needs the
-   pause whether or not the sets just changed — randomizing first when
-   "Randomize at play" is on. Only ever called while not currently
-   playing (see tick), so it never races the hand's own playback
+/* End of a loop pass: pause 2s back at the pre-move-1 position — randomizing
+   first when "Randomize at play" is on — so the set map (if the user has it
+   toggled on) reappears as a preview of what's about to play, same as it
+   shows before pressing play the first time. Only ever called while not
+   currently playing (see tick), so it never races the hand's own playback
    animation. */
 function loopAdvance(){
   clearTimeout(loopTimer);
   if(randomizeAtPlay) randomizeSets();
+  go(-1);
   loopTimer = setTimeout(()=>setPlaying(true), 2000);
 }
 
